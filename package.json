@@ -1,0 +1,20 @@
+{
+  "name": "ledger-squads-app",
+  "private": true,
+  "scripts": {
+    "build": "bun run --cwd cli build",
+    "build:ledger": "bash ./scripts/build-ledger.sh",
+    "check": "bun run --cwd cli check",
+    "speculos": "bash ./scripts/run-speculos.sh",
+    "speculos:term": "SPECULOS_API_PORT=0 SPECULOS_AUTOMATION_PORT=41000 SPECULOS_BUTTON_PORT=42000 SPECULOS_DISPLAY=headless bash ./scripts/run-speculos.sh",
+    "speculos:screen": "bun ./scripts/speculos-ui.ts screen",
+    "speculos:events": "bun ./scripts/speculos-ui.ts events",
+    "speculos:left": "bun ./scripts/speculos-ui.ts left",
+    "speculos:right": "bun ./scripts/speculos-ui.ts right",
+    "speculos:both": "bun ./scripts/speculos-ui.ts both",
+    "speculos:text": "SPECULOS_DISPLAY=text bash ./scripts/run-speculos.sh",
+    "speculos:web": "SPECULOS_DISPLAY=headless SPECULOS_API_PORT=5001 bash ./scripts/run-speculos.sh",
+    "test": "bun run --cwd cli test",
+    "test:speculos": "bun run --cwd cli test:speculos"
+  }
+}
