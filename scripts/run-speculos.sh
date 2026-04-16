@@ -3,9 +3,10 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP_ELF_HOST="${LEDGER_APP_ELF:-$ROOT_DIR/ledger-app/build/nanos2/bin/app.elf}"
-APP_ELF_CONTAINER="${LEDGER_APP_ELF_CONTAINER:-/app/ledger-app/build/nanos2/bin/app.elf}"
 MODEL="${SPECULOS_MODEL:-nanosp}"
+LEDGER_DEVICE="${LEDGER_DEVICE:-nanosplus}"
+APP_ELF_HOST="${LEDGER_APP_ELF:-$ROOT_DIR/target/$LEDGER_DEVICE/release/ledger-squads-app}"
+APP_ELF_CONTAINER="${LEDGER_APP_ELF_CONTAINER:-/app/target/$LEDGER_DEVICE/release/ledger-squads-app}"
 DISPLAY_MODE="${SPECULOS_DISPLAY:-headless}"
 APDU_PORT="${SPECULOS_APDU_PORT:-9999}"
 API_PORT="${SPECULOS_API_PORT:-5000}"
@@ -17,12 +18,12 @@ DOCKER_BIN="${DOCKER_BIN:-docker}"
 
 if [ ! -f "$APP_ELF_HOST" ]; then
   echo >&2 "missing app ELF: $APP_ELF_HOST"
-  echo >&2 "run 'bun run build:ledger' first or set LEDGER_APP_ELF"
+  echo >&2 "run './scripts/build-ledger.sh' first or set LEDGER_APP_ELF"
   exit 1
 fi
 
 if ! command -v "$DOCKER_BIN" >/dev/null 2>&1; then
-  echo >&2 "docker is required for bun run speculos"
+  echo >&2 "docker is required to run Speculos"
   exit 1
 fi
 

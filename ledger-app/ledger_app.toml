@@ -1,4 +1,4 @@
 [app]
-name = "Ledger Squads"
-version = "0.1.0"
-
+build_directory = "./"
+sdk = "Rust"
+devices = ["nanox", "nanos+", "stax", "flex", "apex_p"]
