@@ -13,6 +13,9 @@ pub const LEDGER_VENDOR_ID: u16 = 0x2c97;
 #[derive(Clone, Copy, Debug)]
 #[repr(u8)]
 pub enum AppInstruction {
+    GetAppConfig = 0x04,
+    GetPubkey = 0x05,
+    SignMessage = 0x06,
     GetVersion = 0x00,
     SaveMultisig = 0x10,
     ListMultisigSlot = 0x11,
@@ -44,4 +47,3 @@ impl TransportKind {
         }
     }
 }
-

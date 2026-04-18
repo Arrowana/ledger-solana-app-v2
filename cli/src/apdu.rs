@@ -3,6 +3,19 @@ use anyhow::{bail, Result};
 use crate::constants::{AppInstruction, ProposalVote};
 use crate::derivation::serialize_derivation_path;
 
+const SOLANA_PAYLOAD_VERSION: u8 = 1;
+const P1_NON_CONFIRM: u8 = 0x00;
+const P1_CONFIRM: u8 = 0x01;
+const P2_EXTEND: u8 = 0x01;
+const P2_MORE: u8 = 0x02;
+
+#[derive(Debug, Clone)]
+pub struct AppConfigResponse {
+    pub blind_signing_enabled: bool,
+    pub pubkey_display_mode: u8,
+    pub version: [u8; 3],
+}
+
 #[derive(Debug, Clone)]
 pub struct SavedEntry {
     pub slot: u8,
@@ -35,12 +48,7 @@ pub struct ProposalExecuteUpgradeResponse {
     pub message_hash: [u8; 32],
 }
 
-pub fn encode_apdu(
-    instruction: AppInstruction,
-    p1: u8,
-    p2: u8,
-    data: &[u8],
-) -> Result<Vec<u8>> {
+pub fn encode_apdu(instruction: AppInstruction, p1: u8, p2: u8, data: &[u8]) -> Result<Vec<u8>> {
     if data.len() > u8::MAX as usize {
         bail!("APDU payload too large: {}", data.len());
     }
@@ -62,7 +70,92 @@ pub fn decode_apdu_response(response: &[u8]) -> Result<(&[u8], u16)> {
         bail!("APDU response too short");
     }
     let split = response.len() - 2;
-    Ok((&response[..split], u16::from_be_bytes([response[split], response[split + 1]])))
+    Ok((
+        &response[..split],
+        u16::from_be_bytes([response[split], response[split + 1]]),
+    ))
+}
+
+pub fn build_get_app_config_apdu() -> Result<Vec<u8>> {
+    encode_apdu(AppInstruction::GetAppConfig, 0, 0, &[])
+}
+
+pub fn decode_get_app_config_response(response: &[u8]) -> Result<AppConfigResponse> {
+    if response.len() != 5 {
+        bail!("unexpected app config response length: {}", response.len());
+    }
+
+    Ok(AppConfigResponse {
+        blind_signing_enabled: response[0] != 0,
+        pubkey_display_mode: response[1],
+        version: [response[2], response[3], response[4]],
+    })
+}
+
+pub fn build_get_pubkey_apdu(derivation_path: &[u32], display: bool) -> Result<Vec<u8>> {
+    let payload = serialize_derivation_path(derivation_path)?;
+    encode_apdu(
+        AppInstruction::GetPubkey,
+        if display { P1_CONFIRM } else { P1_NON_CONFIRM },
+        0,
+        &payload,
+    )
+}
+
+pub fn decode_get_pubkey_response(response: &[u8]) -> Result<[u8; 32]> {
+    if response.len() != 32 {
+        bail!("unexpected pubkey response length: {}", response.len());
+    }
+
+    let mut pubkey = [0u8; 32];
+    pubkey.copy_from_slice(response);
+    Ok(pubkey)
+}
+
+pub fn build_sign_message_apdus(derivation_path: &[u32], message: &[u8]) -> Result<Vec<Vec<u8>>> {
+    if message.is_empty() {
+        bail!("message cannot be empty");
+    }
+
+    let mut payload = Vec::with_capacity(1 + derivation_path.len() * 4 + message.len());
+    payload.push(SOLANA_PAYLOAD_VERSION);
+    payload.extend_from_slice(&serialize_derivation_path(derivation_path)?);
+    payload.extend_from_slice(message);
+
+    let mut apdus = Vec::new();
+    let mut offset = 0usize;
+    while offset < payload.len() {
+        let end = (offset + u8::MAX as usize).min(payload.len());
+        let is_first = offset == 0;
+        let is_last = end == payload.len();
+        let mut p2 = 0u8;
+        if !is_first {
+            p2 |= P2_EXTEND;
+        }
+        if !is_last {
+            p2 |= P2_MORE;
+        }
+
+        apdus.push(encode_apdu(
+            AppInstruction::SignMessage,
+            P1_CONFIRM,
+            p2,
+            &payload[offset..end],
+        )?);
+        offset = end;
+    }
+
+    Ok(apdus)
+}
+
+pub fn decode_sign_message_response(response: &[u8]) -> Result<[u8; 64]> {
+    if response.len() != 64 {
+        bail!("unexpected sign response length: {}", response.len());
+    }
+
+    let mut signature = [0u8; 64];
+    signature.copy_from_slice(response);
+    Ok(signature)
 }
 
 pub fn build_save_multisig_apdu(
@@ -108,7 +201,10 @@ pub fn decode_list_multisig_slot_response(slot: u8, response: &[u8]) -> Result<O
     let path_length = response[65] as usize;
     let expected_length = 66 + path_length * 4;
     if response.len() != expected_length {
-        bail!("unexpected list response path payload length: {}", response.len());
+        bail!(
+            "unexpected list response path payload length: {}",
+            response.len()
+        );
     }
 
     let mut multisig = [0u8; 32];
@@ -164,7 +260,10 @@ pub fn build_proposal_vote_apdu(
 
 pub fn decode_proposal_vote_response(response: &[u8]) -> Result<ProposalVoteResponse> {
     if response.len() != 160 {
-        bail!("unexpected proposal vote response length: {}", response.len());
+        bail!(
+            "unexpected proposal vote response length: {}",
+            response.len()
+        );
     }
 
     let mut signature = [0u8; 64];
@@ -196,7 +295,9 @@ pub struct ProposalCreateUpgradeRequest<'a> {
     pub non_confirm: bool,
 }
 
-pub fn build_proposal_create_upgrade_apdu(args: ProposalCreateUpgradeRequest<'_>) -> Result<Vec<u8>> {
+pub fn build_proposal_create_upgrade_apdu(
+    args: ProposalCreateUpgradeRequest<'_>,
+) -> Result<Vec<u8>> {
     let mut payload = Vec::with_capacity(170);
     payload.extend_from_slice(args.multisig);
     payload.extend_from_slice(&args.transaction_index.to_le_bytes());
@@ -311,8 +412,17 @@ pub fn build_reset_multisigs_apdu(non_confirm: bool) -> Result<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_list_multisig_slot_apdu, build_proposal_vote_apdu, decode_apdu_response};
+    use super::{
+        build_get_app_config_apdu, build_list_multisig_slot_apdu, build_proposal_vote_apdu,
+        build_sign_message_apdus, decode_apdu_response,
+    };
     use crate::constants::ProposalVote;
+
+    #[test]
+    fn encodes_get_app_config_apdu() {
+        let apdu = build_get_app_config_apdu().unwrap();
+        assert_eq!(hex::encode(apdu), "e004000000");
+    }
 
     #[test]
     fn encodes_list_apdu() {
@@ -321,12 +431,35 @@ mod tests {
     }
 
     #[test]
+    fn chunks_sign_message_apdus() {
+        let path = [0x8000_002c, 0x8000_01f5, 0x8000_0000];
+        let message = vec![0xaa; 260];
+        let apdus = build_sign_message_apdus(&path, &message).unwrap();
+
+        assert_eq!(apdus.len(), 2);
+        assert_eq!(apdus[0][0], 0xe0);
+        assert_eq!(apdus[0][1], 0x06);
+        assert_eq!(apdus[0][2], 0x01);
+        assert_eq!(apdus[0][3], 0x02);
+        assert_eq!(apdus[1][0], 0xe0);
+        assert_eq!(apdus[1][1], 0x06);
+        assert_eq!(apdus[1][2], 0x01);
+        assert_eq!(apdus[1][3], 0x01);
+    }
+
+    #[test]
     fn proposal_vote_roundtrip() {
         let multisig = [1u8; 32];
         let blockhash = [2u8; 32];
-        let apdu =
-            build_proposal_vote_apdu(&multisig, 42, ProposalVote::Approve, &blockhash, None, false)
-                .unwrap();
+        let apdu = build_proposal_vote_apdu(
+            &multisig,
+            42,
+            ProposalVote::Approve,
+            &blockhash,
+            None,
+            false,
+        )
+        .unwrap();
         let (data, status) = decode_apdu_response(&[0xaa, 0xbb, 0x90, 0x00]).unwrap();
         assert_eq!(status, 0x9000);
         assert_eq!(data, &[0xaa, 0xbb]);
@@ -334,4 +467,3 @@ mod tests {
         assert_eq!(apdu[1], 0x12);
     }
 }
-

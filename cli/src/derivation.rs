@@ -86,7 +86,10 @@ mod tests {
     #[test]
     fn parses_solana_path() {
         let path = parse_derivation_path("m/44'/501'/0'/0'").unwrap();
-        assert_eq!(path, vec![0x8000_002c, 0x8000_01f5, 0x8000_0000, 0x8000_0000]);
+        assert_eq!(
+            path,
+            vec![0x8000_002c, 0x8000_01f5, 0x8000_0000, 0x8000_0000]
+        );
         assert_eq!(format_derivation_path(&path), "m/44'/501'/0'/0'");
     }
 
@@ -96,4 +99,3 @@ mod tests {
         assert_eq!(hex::encode(encoded), "028000002c800001f5");
     }
 }
-

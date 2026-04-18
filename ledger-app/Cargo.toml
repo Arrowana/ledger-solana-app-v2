@@ -1,5 +1,5 @@
 [package]
-name = "ledger-squads-app"
+name = "ledger-solana-app-v2"
 version = "0.1.0"
 authors = ["OpenAI"]
 edition = "2021"
@@ -14,6 +14,8 @@ hex = { version = "0.4.3", default-features = false, features = ["serde", "alloc
 numtoa = "0.2.4"
 arrayvec = { version = "0.7", default-features = false }
 heapless = "0.8.0"
+bs58 = { version = "0.5.1", default-features = false, features = ["alloc"] }
+solana-message-light = { path = "../solana-message-light" }
 
 [build-dependencies]
 image = "0.25.7"
@@ -26,7 +28,7 @@ debug = ["ledger_device_sdk/debug"]
 curve = ["ed25519"]
 flags = "0"
 path = ["44'/501'"]
-name = "Ledger Squads"
+name = "Solana Review"
 
 [package.metadata.ledger.nanox]
 icon = "icons/crab_14x14.gif"

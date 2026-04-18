@@ -18,24 +18,20 @@ pub const PROPOSAL_VOTE_REJECT: u8 = 0x01;
 
 const SYSTEM_PROGRAM_ID: [u8; PUBKEY_LENGTH] = [0u8; PUBKEY_LENGTH];
 const BPF_LOADER_UPGRADEABLE_PROGRAM_ID: [u8; PUBKEY_LENGTH] = [
-    0x02, 0xA8, 0xF6, 0x91, 0x4E, 0x88, 0xA1, 0xB0, 0xE2, 0x10, 0x15, 0x3E, 0xF7, 0x63, 0xAE,
-    0x2B, 0x00, 0xC2, 0xB9, 0x3D, 0x16, 0xC1, 0x24, 0xD2, 0xC0, 0x53, 0x7A, 0x10, 0x04, 0x80,
-    0x00, 0x00,
+    0x02, 0xA8, 0xF6, 0x91, 0x4E, 0x88, 0xA1, 0xB0, 0xE2, 0x10, 0x15, 0x3E, 0xF7, 0x63, 0xAE, 0x2B,
+    0x00, 0xC2, 0xB9, 0x3D, 0x16, 0xC1, 0x24, 0xD2, 0xC0, 0x53, 0x7A, 0x10, 0x04, 0x80, 0x00, 0x00,
 ];
 const SYSVAR_RENT_ID: [u8; PUBKEY_LENGTH] = [
-    0x06, 0xA7, 0xD5, 0x17, 0x19, 0x2C, 0x5C, 0x51, 0x21, 0x8C, 0xC9, 0x4C, 0x3D, 0x4A, 0xF1,
-    0x7F, 0x58, 0xDA, 0xEE, 0x08, 0x9B, 0xA1, 0xFD, 0x44, 0xE3, 0xDB, 0xD9, 0x8A, 0x00, 0x00,
-    0x00, 0x00,
+    0x06, 0xA7, 0xD5, 0x17, 0x19, 0x2C, 0x5C, 0x51, 0x21, 0x8C, 0xC9, 0x4C, 0x3D, 0x4A, 0xF1, 0x7F,
+    0x58, 0xDA, 0xEE, 0x08, 0x9B, 0xA1, 0xFD, 0x44, 0xE3, 0xDB, 0xD9, 0x8A, 0x00, 0x00, 0x00, 0x00,
 ];
 const SYSVAR_CLOCK_ID: [u8; PUBKEY_LENGTH] = [
-    0x06, 0xA7, 0xD5, 0x17, 0x18, 0xC7, 0x74, 0xC9, 0x28, 0x56, 0x63, 0x98, 0x69, 0x1D, 0x5E,
-    0xB6, 0x8B, 0x5E, 0xB8, 0xA3, 0x9B, 0x4B, 0x6D, 0x5C, 0x73, 0x55, 0x5B, 0x21, 0x00, 0x00,
-    0x00, 0x00,
+    0x06, 0xA7, 0xD5, 0x17, 0x18, 0xC7, 0x74, 0xC9, 0x28, 0x56, 0x63, 0x98, 0x69, 0x1D, 0x5E, 0xB6,
+    0x8B, 0x5E, 0xB8, 0xA3, 0x9B, 0x4B, 0x6D, 0x5C, 0x73, 0x55, 0x5B, 0x21, 0x00, 0x00, 0x00, 0x00,
 ];
 const SQUADS_PROGRAM_ID: [u8; PUBKEY_LENGTH] = [
-    0x06, 0x81, 0xC4, 0xCE, 0x47, 0xE2, 0x23, 0x68, 0xB8, 0xB1, 0x55, 0x5E, 0xC8, 0x87, 0xAF,
-    0x09, 0x2E, 0xFC, 0x7E, 0xFB, 0xB6, 0x6C, 0xA3, 0xF5, 0x2F, 0xBF, 0x68, 0xD4, 0xAC, 0x9C,
-    0xB7, 0xA8,
+    0x06, 0x81, 0xC4, 0xCE, 0x47, 0xE2, 0x23, 0x68, 0xB8, 0xB1, 0x55, 0x5E, 0xC8, 0x87, 0xAF, 0x09,
+    0x2E, 0xFC, 0x7E, 0xFB, 0xB6, 0x6C, 0xA3, 0xF5, 0x2F, 0xBF, 0x68, 0xD4, 0xAC, 0x9C, 0xB7, 0xA8,
 ];
 const PROPOSAL_APPROVE_DISCRIMINATOR: [u8; 8] = [144, 37, 164, 136, 188, 216, 42, 248];
 const PROPOSAL_REJECT_DISCRIMINATOR: [u8; 8] = [243, 62, 134, 156, 230, 106, 246, 135];
@@ -167,12 +163,19 @@ pub fn derive_vault_pda(
 ) -> Result<[u8; PUBKEY_LENGTH], AppSW> {
     let vault_index_seed = [vault_index];
     derive_pda(
-        &[SEED_PREFIX, multisig, SEED_VAULT, vault_index_seed.as_slice()],
+        &[
+            SEED_PREFIX,
+            multisig,
+            SEED_VAULT,
+            vault_index_seed.as_slice(),
+        ],
         &SQUADS_PROGRAM_ID,
     )
 }
 
-pub fn derive_program_data_pda(program: &[u8; PUBKEY_LENGTH]) -> Result<[u8; PUBKEY_LENGTH], AppSW> {
+pub fn derive_program_data_pda(
+    program: &[u8; PUBKEY_LENGTH],
+) -> Result<[u8; PUBKEY_LENGTH], AppSW> {
     derive_pda(&[program], &BPF_LOADER_UPGRADEABLE_PROGRAM_ID)
 }
 
@@ -299,7 +302,8 @@ pub fn build_proposal_create_upgrade_artifacts(
 
     let create_message_hash = sha256_bytes(create_message.as_slice())?;
     let proposal_message_hash = sha256_bytes(proposal_message.as_slice())?;
-    let create_signature = sign_message_with_path(derivation_path, path_length, create_message.as_slice())?;
+    let create_signature =
+        sign_message_with_path(derivation_path, path_length, create_message.as_slice())?;
     let proposal_signature =
         sign_message_with_path(derivation_path, path_length, proposal_message.as_slice())?;
 
@@ -349,7 +353,11 @@ pub fn build_proposal_execute_upgrade_artifacts(
         inputs.recent_blockhash,
     )?;
     let message_hash = sha256_bytes(message.as_slice())?;
-    let signature = sign_message_with_path(inputs.derivation_path, inputs.path_length, message.as_slice())?;
+    let signature = sign_message_with_path(
+        inputs.derivation_path,
+        inputs.path_length,
+        message.as_slice(),
+    )?;
 
     Ok(ProposalExecuteUpgradeArtifacts {
         intent_hash,
@@ -407,14 +415,22 @@ fn build_upgrade_create_transaction_message(
 ) -> Result<ArrayVec<u8, MAX_MESSAGE_LENGTH>, AppSW> {
     let vault = derive_vault_pda(multisig, vault_index)?;
     let wrapped_message = build_upgrade_wrapped_message(&vault, program, buffer, spill)?;
-    let accounts = [member, multisig, transaction, &SQUADS_PROGRAM_ID, &SYSTEM_PROGRAM_ID];
+    let accounts = [
+        member,
+        multisig,
+        transaction,
+        &SQUADS_PROGRAM_ID,
+        &SYSTEM_PROGRAM_ID,
+    ];
     let account_indexes = [1u8, 2, 0, 0, 4];
 
     let mut instruction_data = ArrayVec::<u8, MAX_MESSAGE_LENGTH>::new();
     instruction_data
         .try_extend_from_slice(&VAULT_TRANSACTION_CREATE_DISCRIMINATOR)
         .map_err(|_| AppSW::CommError)?;
-    instruction_data.try_push(vault_index).map_err(|_| AppSW::CommError)?;
+    instruction_data
+        .try_push(vault_index)
+        .map_err(|_| AppSW::CommError)?;
     instruction_data.try_push(0).map_err(|_| AppSW::CommError)?;
     instruction_data
         .try_extend_from_slice(&(wrapped_message.len() as u32).to_le_bytes())
@@ -443,7 +459,13 @@ fn build_proposal_create_message(
     transaction_index: u64,
     recent_blockhash: &[u8; BLOCKHASH_LENGTH],
 ) -> Result<ArrayVec<u8, MAX_MESSAGE_LENGTH>, AppSW> {
-    let accounts = [member, proposal, &SQUADS_PROGRAM_ID, multisig, &SYSTEM_PROGRAM_ID];
+    let accounts = [
+        member,
+        proposal,
+        &SQUADS_PROGRAM_ID,
+        multisig,
+        &SYSTEM_PROGRAM_ID,
+    ];
     let account_indexes = [3u8, 1, 0, 0, 4];
 
     let mut instruction_data = ArrayVec::<u8, 17>::new();
@@ -509,7 +531,10 @@ fn build_upgrade_execute_message(
     )
 }
 
-fn derive_pda(seeds: &[&[u8]], program_id: &[u8; PUBKEY_LENGTH]) -> Result<[u8; PUBKEY_LENGTH], AppSW> {
+fn derive_pda(
+    seeds: &[&[u8]],
+    program_id: &[u8; PUBKEY_LENGTH],
+) -> Result<[u8; PUBKEY_LENGTH], AppSW> {
     for bump in (0..=255u8).rev() {
         let bump_seed = [bump];
         let mut sha = Sha2_256::new();
@@ -553,7 +578,8 @@ fn is_on_curve(compressed_point: &[u8; PUBKEY_LENGTH]) -> bool {
         return false;
     }
 
-    let check =
-        unsafe { cx_ecpoint_is_on_curve(&point as *const cx_ecpoint_t, &mut on_curve as *mut bool) };
+    let check = unsafe {
+        cx_ecpoint_is_on_curve(&point as *const cx_ecpoint_t, &mut on_curve as *mut bool)
+    };
     check == CX_OK && on_curve
 }

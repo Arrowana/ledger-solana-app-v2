@@ -38,5 +38,5 @@ pub fn ui_menu_main(_: &mut Comm) -> NbglHomeAndSettings {
     NbglHomeAndSettings::new()
         .glyph(&FERRIS)
         .settings(settings.get_mut(), &settings_strings)
-        .infos("Ledger Squads", env!("CARGO_PKG_VERSION"), "OpenAI")
+        .infos("Solana Review", env!("CARGO_PKG_VERSION"), "OpenAI")
 }

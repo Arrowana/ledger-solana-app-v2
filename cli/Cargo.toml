@@ -7,13 +7,15 @@ edition = "2021"
 anyhow = "1.0.100"
 bs58 = "0.5.1"
 clap = { version = "4.5.39", features = ["derive", "env"] }
+codama-parser = { path = "../codama-parser" }
 hidapi = "2.6.3"
+hex = "0.4.3"
 reqwest = { version = "0.12.15", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
+solana-message-light = { path = "../solana-message-light" }
 
 [dev-dependencies]
-hex = "0.4.3"
 
 [[bin]]
 name = "ledger-squads-cli"
@@ -22,4 +24,3 @@ path = "src/main.rs"
 [[bin]]
 name = "speculos-ui"
 path = "src/bin/speculos_ui.rs"
-

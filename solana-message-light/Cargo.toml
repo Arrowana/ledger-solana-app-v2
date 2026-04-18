@@ -1,0 +1,13 @@
+[package]
+name = "solana-message-light"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+
+[dev-dependencies]
+codama-parser = { path = "../codama-parser" }
+hex = "0.4.3"
+solana-message = { version = "3.0.1", features = ["bincode"] }
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(test)'] }

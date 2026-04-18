@@ -56,7 +56,9 @@ fn main() -> Result<()> {
         .unwrap_or_else(|| format!("http://127.0.0.1:{}", cli.api_port));
 
     match cli.command {
-        Command::Screen => print_current_screen(&api_base, &cli.automation_host, cli.automation_port),
+        Command::Screen => {
+            print_current_screen(&api_base, &cli.automation_host, cli.automation_port)
+        }
         Command::Events => stream_events(&api_base, &cli.automation_host, cli.automation_port),
         Command::Left => press_button(
             "left",
@@ -96,7 +98,11 @@ fn print_current_screen(api_base: &str, automation_host: &str, automation_port: 
             Ok(())
         }
         _ => {
-            let lines = collect_automation_lines(automation_host, automation_port, Duration::from_millis(250))?;
+            let lines = collect_automation_lines(
+                automation_host,
+                automation_port,
+                Duration::from_millis(250),
+            )?;
             println!("Automation: {automation_host}:{automation_port}");
             if lines.is_empty() {
                 println!("(no text events)");
@@ -165,8 +171,9 @@ fn press_button(
         .send()
         .is_err()
     {
-        let mut socket = TcpStream::connect((button_host, button_port))
-            .with_context(|| format!("failed to connect to button socket {button_host}:{button_port}"))?;
+        let mut socket = TcpStream::connect((button_host, button_port)).with_context(|| {
+            format!("failed to connect to button socket {button_host}:{button_port}")
+        })?;
         socket.write_all(button.as_bytes())?;
         socket.write_all(b"\n")?;
     }

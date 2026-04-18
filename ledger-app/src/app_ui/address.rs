@@ -16,21 +16,15 @@
  *****************************************************************************/
 
 use crate::AppSW;
-use alloc::format;
 
 use ledger_device_sdk::include_gif;
 use ledger_device_sdk::io::Comm;
 use ledger_device_sdk::nbgl::{NbglAddressReview, NbglGlyph};
 
-// Display only the last 20 bytes of the address
-const DISPLAY_ADDR_BYTES_LEN: usize = 20;
-
-pub fn ui_display_pk(comm: &mut Comm, addr: &[u8]) -> Result<bool, AppSW> {
-    let addr_hex = format!(
-        "0x{}",
-        hex::encode(&addr[addr.len() - DISPLAY_ADDR_BYTES_LEN..]).to_uppercase()
-    );
-
+pub fn ui_display_address<const N: usize>(
+    comm: &mut Comm<N>,
+    address: &str,
+) -> Result<bool, AppSW> {
     // Load glyph from file with include_gif macro. Creates an NBGL compatible glyph.
     #[cfg(target_os = "apex_p")]
     const FERRIS: NbglGlyph = NbglGlyph::from_include(include_gif!("glyphs/crab_48x48.png", NBGL));
@@ -42,6 +36,6 @@ pub fn ui_display_pk(comm: &mut Comm, addr: &[u8]) -> Result<bool, AppSW> {
     // Display the address confirmation screen.
     Ok(NbglAddressReview::new()
         .glyph(&FERRIS)
-        .review_title("Verify CRAB address")
-        .show(comm, &addr_hex))
+        .review_title("Verify Solana address")
+        .show(comm, address))
 }

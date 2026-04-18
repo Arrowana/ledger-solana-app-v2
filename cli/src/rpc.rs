@@ -36,7 +36,8 @@ impl RpcClient {
             blockhash: String,
         }
 
-        let response: Response = self.rpc("getLatestBlockhash", json!([{ "commitment": "confirmed" }]))?;
+        let response: Response =
+            self.rpc("getLatestBlockhash", json!([{ "commitment": "confirmed" }]))?;
         if let Some(error) = response.error {
             bail!("RPC getLatestBlockhash failed: {error}");
         }
@@ -105,4 +106,3 @@ impl RpcClient {
             .with_context(|| format!("invalid RPC response for {method}"))
     }
 }
-

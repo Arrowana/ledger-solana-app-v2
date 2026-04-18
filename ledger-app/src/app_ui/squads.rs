@@ -46,15 +46,13 @@ pub fn show_save_review<const N: usize>(comm: &mut Comm<N>, entry: &SavedMultisi
 }
 
 pub fn show_reset_review<const N: usize>(comm: &mut Comm<N>) -> bool {
-    NbglChoice::new()
-        .glyph(&APP_GLYPH)
-        .show(
-            comm,
-            "Reset multisigs?",
-            "This deletes all saved bindings.",
-            "Reset",
-            "Cancel",
-        )
+    NbglChoice::new().glyph(&APP_GLYPH).show(
+        comm,
+        "Reset multisigs?",
+        "This deletes all saved bindings.",
+        "Reset",
+        "Cancel",
+    )
 }
 
 pub fn show_vote_review<const N: usize>(
@@ -65,7 +63,11 @@ pub fn show_vote_review<const N: usize>(
     vote: u8,
     message_hash: &[u8; 32],
 ) -> bool {
-    let action = if vote == 0x00 { "Approve vote" } else { "Reject vote" };
+    let action = if vote == 0x00 {
+        "Approve vote"
+    } else {
+        "Reject vote"
+    };
     let multisig = short_key(multisig);
     let member = short_key(member);
     let transaction_index = format_u64(transaction_index);
@@ -123,15 +125,42 @@ pub fn show_create_upgrade_review<const N: usize>(
     let create_hash = format_hex(create_hash);
     let proposal_hash = format_hex(proposal_hash);
     let fields = [
-        Field { name: "Multisig", value: &multisig },
-        Field { name: "Tx index", value: &transaction_index },
-        Field { name: "Vault", value: &vault_index },
-        Field { name: "Program", value: &program },
-        Field { name: "Buffer", value: &buffer },
-        Field { name: "Spill", value: &spill },
-        Field { name: "Intent hash", value: &intent_hash },
-        Field { name: "Create hash", value: &create_hash },
-        Field { name: "Proposal hash", value: &proposal_hash },
+        Field {
+            name: "Multisig",
+            value: &multisig,
+        },
+        Field {
+            name: "Tx index",
+            value: &transaction_index,
+        },
+        Field {
+            name: "Vault",
+            value: &vault_index,
+        },
+        Field {
+            name: "Program",
+            value: &program,
+        },
+        Field {
+            name: "Buffer",
+            value: &buffer,
+        },
+        Field {
+            name: "Spill",
+            value: &spill,
+        },
+        Field {
+            name: "Intent hash",
+            value: &intent_hash,
+        },
+        Field {
+            name: "Create hash",
+            value: &create_hash,
+        },
+        Field {
+            name: "Proposal hash",
+            value: &proposal_hash,
+        },
     ];
 
     NbglReview::new()
@@ -162,14 +191,38 @@ pub fn show_execute_upgrade_review<const N: usize>(
     let intent_hash = format_hex(intent_hash);
     let message_hash = format_hex(message_hash);
     let fields = [
-        Field { name: "Multisig", value: &multisig },
-        Field { name: "Tx index", value: &transaction_index },
-        Field { name: "Vault", value: &vault_index },
-        Field { name: "Program", value: &program },
-        Field { name: "Buffer", value: &buffer },
-        Field { name: "Spill", value: &spill },
-        Field { name: "Intent hash", value: &intent_hash },
-        Field { name: "Execute hash", value: &message_hash },
+        Field {
+            name: "Multisig",
+            value: &multisig,
+        },
+        Field {
+            name: "Tx index",
+            value: &transaction_index,
+        },
+        Field {
+            name: "Vault",
+            value: &vault_index,
+        },
+        Field {
+            name: "Program",
+            value: &program,
+        },
+        Field {
+            name: "Buffer",
+            value: &buffer,
+        },
+        Field {
+            name: "Spill",
+            value: &spill,
+        },
+        Field {
+            name: "Intent hash",
+            value: &intent_hash,
+        },
+        Field {
+            name: "Execute hash",
+            value: &message_hash,
+        },
     ];
 
     NbglReview::new()

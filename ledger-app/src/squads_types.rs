@@ -43,7 +43,9 @@ pub struct MultisigAccount {
 
 impl MultisigAccount {
     pub fn find_member(&self, member: &PubkeyBytes) -> Option<&Member> {
-        self.members.iter().find(|candidate| &candidate.key == member)
+        self.members
+            .iter()
+            .find(|candidate| &candidate.key == member)
     }
 
     pub fn member_can_vote(&self, member: &PubkeyBytes) -> bool {

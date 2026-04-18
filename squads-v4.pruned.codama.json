@@ -1,0 +1,1693 @@
+{
+  "kind": "rootNode",
+  "standard": "codama",
+  "program": {
+    "name": "squadsMultisigProgram",
+    "publicKey": "",
+    "version": "2.0.0",
+    "origin": "anchor",
+    "instructions": [
+      {
+        "name": "programConfigInit",
+        "arguments": [
+          {
+            "name": "discriminator",
+            "type": {
+              "kind": "fixedSizeTypeNode",
+              "size": 8,
+              "type": {
+                "kind": "bytesTypeNode"
+              }
+            },
+            "defaultValueStrategy": "omitted",
+            "defaultValue": {
+              "kind": "bytesValueNode",
+              "data": "b8bcc6c3cd7c75d8",
+              "encoding": "base16"
+            }
+          },
+          {
+            "name": "authority",
+            "type": {
+              "kind": "publicKeyTypeNode"
+            }
+          },
+          {
+            "name": "multisigCreationFee",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u64",
+              "endian": "le"
+            }
+          },
+          {
+            "name": "treasury",
+            "type": {
+              "kind": "publicKeyTypeNode"
+            }
+          }
+        ]
+      },
+      {
+        "name": "programConfigSetAuthority",
+        "arguments": [
+          {
+            "name": "discriminator",
+            "type": {
+              "kind": "fixedSizeTypeNode",
+              "size": 8,
+              "type": {
+                "kind": "bytesTypeNode"
+              }
+            },
+            "defaultValueStrategy": "omitted",
+            "defaultValue": {
+              "kind": "bytesValueNode",
+              "data": "eef224b5208fd84b",
+              "encoding": "base16"
+            }
+          },
+          {
+            "name": "newAuthority",
+            "type": {
+              "kind": "publicKeyTypeNode"
+            }
+          }
+        ]
+      },
+      {
+        "name": "programConfigSetMultisigCreationFee",
+        "arguments": [
+          {
+            "name": "discriminator",
+            "type": {
+              "kind": "fixedSizeTypeNode",
+              "size": 8,
+              "type": {
+                "kind": "bytesTypeNode"
+              }
+            },
+            "defaultValueStrategy": "omitted",
+            "defaultValue": {
+              "kind": "bytesValueNode",
+              "data": "65a0f93f9ad7990d",
+              "encoding": "base16"
+            }
+          },
+          {
+            "name": "newMultisigCreationFee",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u64",
+              "endian": "le"
+            }
+          }
+        ]
+      },
+      {
+        "name": "programConfigSetTreasury",
+        "arguments": [
+          {
+            "name": "discriminator",
+            "type": {
+              "kind": "fixedSizeTypeNode",
+              "size": 8,
+              "type": {
+                "kind": "bytesTypeNode"
+              }
+            },
+            "defaultValueStrategy": "omitted",
+            "defaultValue": {
+              "kind": "bytesValueNode",
+              "data": "6f2ef37590bca26b",
+              "encoding": "base16"
+            }
+          },
+          {
+            "name": "newTreasury",
+            "type": {
+              "kind": "publicKeyTypeNode"
+            }
+          }
+        ]
+      },
+      {
+        "name": "multisigCreate",
+        "arguments": [
+          {
+            "name": "discriminator",
+            "type": {
+              "kind": "fixedSizeTypeNode",
+              "size": 8,
+              "type": {
+                "kind": "bytesTypeNode"
+              }
+            },
+            "defaultValueStrategy": "omitted",
+            "defaultValue": {
+              "kind": "bytesValueNode",
+              "data": "7a4d509f54585ac5",
+              "encoding": "base16"
+            }
+          },
+          {
+            "name": "configAuthority",
+            "type": {
+              "kind": "optionTypeNode",
+              "item": {
+                "kind": "publicKeyTypeNode"
+              },
+              "prefix": {
+                "kind": "numberTypeNode",
+                "format": "u8",
+                "endian": "le"
+              },
+              "fixed": false
+            }
+          },
+          {
+            "name": "threshold",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u16",
+              "endian": "le"
+            }
+          },
+          {
+            "name": "members",
+            "type": {
+              "kind": "arrayTypeNode",
+              "item": {
+                "kind": "definedTypeLinkNode",
+                "name": "member"
+              },
+              "count": {
+                "kind": "prefixedCountNode",
+                "prefix": {
+                  "kind": "numberTypeNode",
+                  "format": "u32",
+                  "endian": "le"
+                }
+              }
+            }
+          },
+          {
+            "name": "timeLock",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u32",
+              "endian": "le"
+            }
+          },
+          {
+            "name": "memo",
+            "type": {
+              "kind": "optionTypeNode",
+              "item": {
+                "kind": "sizePrefixTypeNode",
+                "type": {
+                  "kind": "stringTypeNode",
+                  "encoding": "utf8"
+                },
+                "prefix": {
+                  "kind": "numberTypeNode",
+                  "format": "u32",
+                  "endian": "le"
+                }
+              },
+              "prefix": {
+                "kind": "numberTypeNode",
+                "format": "u8",
+                "endian": "le"
+              },
+              "fixed": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "multisigCreateV2",
+        "arguments": [
+          {
+            "name": "discriminator",
+            "type": {
+              "kind": "fixedSizeTypeNode",
+              "size": 8,
+              "type": {
+                "kind": "bytesTypeNode"
+              }
+            },
+            "defaultValueStrategy": "omitted",
+            "defaultValue": {
+              "kind": "bytesValueNode",
+              "data": "32ddc75d28f58be9",
+              "encoding": "base16"
+            }
+          },
+          {
+            "name": "configAuthority",
+            "type": {
+              "kind": "optionTypeNode",
+              "item": {
+                "kind": "publicKeyTypeNode"
+              },
+              "prefix": {
+                "kind": "numberTypeNode",
+                "format": "u8",
+                "endian": "le"
+              },
+              "fixed": false
+            }
+          },
+          {
+            "name": "threshold",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u16",
+              "endian": "le"
+            }
+          },
+          {
+            "name": "members",
+            "type": {
+              "kind": "arrayTypeNode",
+              "item": {
+                "kind": "definedTypeLinkNode",
+                "name": "member"
+              },
+              "count": {
+                "kind": "prefixedCountNode",
+                "prefix": {
+                  "kind": "numberTypeNode",
+                  "format": "u32",
+                  "endian": "le"
+                }
+              }
+            }
+          },
+          {
+            "name": "timeLock",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u32",
+              "endian": "le"
+            }
+          },
+          {
+            "name": "rentCollector",
+            "type": {
+              "kind": "optionTypeNode",
+              "item": {
+                "kind": "publicKeyTypeNode"
+              },
+              "prefix": {
+                "kind": "numberTypeNode",
+                "format": "u8",
+                "endian": "le"
+              },
+              "fixed": false
+            }
+          },
+          {
+            "name": "memo",
+            "type": {
+              "kind": "optionTypeNode",
+              "item": {
+                "kind": "sizePrefixTypeNode",
+                "type": {
+                  "kind": "stringTypeNode",
+                  "encoding": "utf8"
+                },
+                "prefix": {
+                  "kind": "numberTypeNode",
+                  "format": "u32",
+                  "endian": "le"
+                }
+              },
+              "prefix": {
+                "kind": "numberTypeNode",
+                "format": "u8",
+                "endian": "le"
+              },
+              "fixed": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "multisigAddMember",
+        "arguments": [
+          {
+            "name": "discriminator",
+            "type": {
+              "kind": "fixedSizeTypeNode",
+              "size": 8,
+              "type": {
+                "kind": "bytesTypeNode"
+              }
+            },
+            "defaultValueStrategy": "omitted",
+            "defaultValue": {
+              "kind": "bytesValueNode",
+              "data": "01dbd76cb8e5d608",
+              "encoding": "base16"
+            }
+          },
+          {
+            "name": "newMember",
+            "type": {
+              "kind": "definedTypeLinkNode",
+              "name": "member"
+            }
+          },
+          {
+            "name": "memo",
+            "type": {
+              "kind": "optionTypeNode",
+              "item": {
+                "kind": "sizePrefixTypeNode",
+                "type": {
+                  "kind": "stringTypeNode",
+                  "encoding": "utf8"
+                },
+                "prefix": {
+                  "kind": "numberTypeNode",
+                  "format": "u32",
+                  "endian": "le"
+                }
+              },
+              "prefix": {
+                "kind": "numberTypeNode",
+                "format": "u8",
+                "endian": "le"
+              },
+              "fixed": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "multisigRemoveMember",
+        "arguments": [
+          {
+            "name": "discriminator",
+            "type": {
+              "kind": "fixedSizeTypeNode",
+              "size": 8,
+              "type": {
+                "kind": "bytesTypeNode"
+              }
+            },
+            "defaultValueStrategy": "omitted",
+            "defaultValue": {
+              "kind": "bytesValueNode",
+              "data": "d975b1d2b691da48",
+              "encoding": "base16"
+            }
+          },
+          {
+            "name": "oldMember",
+            "type": {
+              "kind": "publicKeyTypeNode"
+            }
+          },
+          {
+            "name": "memo",
+            "type": {
+              "kind": "optionTypeNode",
+              "item": {
+                "kind": "sizePrefixTypeNode",
+                "type": {
+                  "kind": "stringTypeNode",
+                  "encoding": "utf8"
+                },
+                "prefix": {
+                  "kind": "numberTypeNode",
+                  "format": "u32",
+                  "endian": "le"
+                }
+              },
+              "prefix": {
+                "kind": "numberTypeNode",
+                "format": "u8",
+                "endian": "le"
+              },
+              "fixed": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "multisigSetTimeLock",
+        "arguments": [
+          {
+            "name": "discriminator",
+            "type": {
+              "kind": "fixedSizeTypeNode",
+              "size": 8,
+              "type": {
+                "kind": "bytesTypeNode"
+              }
+            },
+            "defaultValueStrategy": "omitted",
+            "defaultValue": {
+              "kind": "bytesValueNode",
+              "data": "949a794dd4fe9b48",
+              "encoding": "base16"
+            }
+          },
+          {
+            "name": "timeLock",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u32",
+              "endian": "le"
+            }
+          },
+          {
+            "name": "memo",
+            "type": {
+              "kind": "optionTypeNode",
+              "item": {
+                "kind": "sizePrefixTypeNode",
+                "type": {
+                  "kind": "stringTypeNode",
+                  "encoding": "utf8"
+                },
+                "prefix": {
+                  "kind": "numberTypeNode",
+                  "format": "u32",
+                  "endian": "le"
+                }
+              },
+              "prefix": {
+                "kind": "numberTypeNode",
+                "format": "u8",
+                "endian": "le"
+              },
+              "fixed": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "multisigChangeThreshold",
+        "arguments": [
+          {
+            "name": "discriminator",
+            "type": {
+              "kind": "fixedSizeTypeNode",
+              "size": 8,
+              "type": {
+                "kind": "bytesTypeNode"
+              }
+            },
+            "defaultValueStrategy": "omitted",
+            "defaultValue": {
+              "kind": "bytesValueNode",
+              "data": "8d2a0f7ea95c3eb5",
+              "encoding": "base16"
+            }
+          },
+          {
+            "name": "newThreshold",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u16",
+              "endian": "le"
+            }
+          },
+          {
+            "name": "memo",
+            "type": {
+              "kind": "optionTypeNode",
+              "item": {
+                "kind": "sizePrefixTypeNode",
+                "type": {
+                  "kind": "stringTypeNode",
+                  "encoding": "utf8"
+                },
+                "prefix": {
+                  "kind": "numberTypeNode",
+                  "format": "u32",
+                  "endian": "le"
+                }
+              },
+              "prefix": {
+                "kind": "numberTypeNode",
+                "format": "u8",
+                "endian": "le"
+              },
+              "fixed": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "multisigSetConfigAuthority",
+        "arguments": [
+          {
+            "name": "discriminator",
+            "type": {
+              "kind": "fixedSizeTypeNode",
+              "size": 8,
+              "type": {
+                "kind": "bytesTypeNode"
+              }
+            },
+            "defaultValueStrategy": "omitted",
+            "defaultValue": {
+              "kind": "bytesValueNode",
+              "data": "8f5dc78f5ca9c1e8",
+              "encoding": "base16"
+            }
+          },
+          {
+            "name": "configAuthority",
+            "type": {
+              "kind": "publicKeyTypeNode"
+            }
+          },
+          {
+            "name": "memo",
+            "type": {
+              "kind": "optionTypeNode",
+              "item": {
+                "kind": "sizePrefixTypeNode",
+                "type": {
+                  "kind": "stringTypeNode",
+                  "encoding": "utf8"
+                },
+                "prefix": {
+                  "kind": "numberTypeNode",
+                  "format": "u32",
+                  "endian": "le"
+                }
+              },
+              "prefix": {
+                "kind": "numberTypeNode",
+                "format": "u8",
+                "endian": "le"
+              },
+              "fixed": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "multisigSetRentCollector",
+        "arguments": [
+          {
+            "name": "discriminator",
+            "type": {
+              "kind": "fixedSizeTypeNode",
+              "size": 8,
+              "type": {
+                "kind": "bytesTypeNode"
+              }
+            },
+            "defaultValueStrategy": "omitted",
+            "defaultValue": {
+              "kind": "bytesValueNode",
+              "data": "30cc4139d2469c4a",
+              "encoding": "base16"
+            }
+          },
+          {
+            "name": "rentCollector",
+            "type": {
+              "kind": "optionTypeNode",
+              "item": {
+                "kind": "publicKeyTypeNode"
+              },
+              "prefix": {
+                "kind": "numberTypeNode",
+                "format": "u8",
+                "endian": "le"
+              },
+              "fixed": false
+            }
+          },
+          {
+            "name": "memo",
+            "type": {
+              "kind": "optionTypeNode",
+              "item": {
+                "kind": "sizePrefixTypeNode",
+                "type": {
+                  "kind": "stringTypeNode",
+                  "encoding": "utf8"
+                },
+                "prefix": {
+                  "kind": "numberTypeNode",
+                  "format": "u32",
+                  "endian": "le"
+                }
+              },
+              "prefix": {
+                "kind": "numberTypeNode",
+                "format": "u8",
+                "endian": "le"
+              },
+              "fixed": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "multisigAddSpendingLimit",
+        "arguments": [
+          {
+            "name": "discriminator",
+            "type": {
+              "kind": "fixedSizeTypeNode",
+              "size": 8,
+              "type": {
+                "kind": "bytesTypeNode"
+              }
+            },
+            "defaultValueStrategy": "omitted",
+            "defaultValue": {
+              "kind": "bytesValueNode",
+              "data": "0bf29f2a56c55973",
+              "encoding": "base16"
+            }
+          },
+          {
+            "name": "createKey",
+            "type": {
+              "kind": "publicKeyTypeNode"
+            }
+          },
+          {
+            "name": "vaultIndex",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u8",
+              "endian": "le"
+            }
+          },
+          {
+            "name": "mint",
+            "type": {
+              "kind": "publicKeyTypeNode"
+            }
+          },
+          {
+            "name": "amount",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u64",
+              "endian": "le"
+            }
+          },
+          {
+            "name": "period",
+            "type": {
+              "kind": "definedTypeLinkNode",
+              "name": "period"
+            }
+          },
+          {
+            "name": "members",
+            "type": {
+              "kind": "arrayTypeNode",
+              "item": {
+                "kind": "publicKeyTypeNode"
+              },
+              "count": {
+                "kind": "prefixedCountNode",
+                "prefix": {
+                  "kind": "numberTypeNode",
+                  "format": "u32",
+                  "endian": "le"
+                }
+              }
+            }
+          },
+          {
+            "name": "destinations",
+            "type": {
+              "kind": "arrayTypeNode",
+              "item": {
+                "kind": "publicKeyTypeNode"
+              },
+              "count": {
+                "kind": "prefixedCountNode",
+                "prefix": {
+                  "kind": "numberTypeNode",
+                  "format": "u32",
+                  "endian": "le"
+                }
+              }
+            }
+          },
+          {
+            "name": "memo",
+            "type": {
+              "kind": "optionTypeNode",
+              "item": {
+                "kind": "sizePrefixTypeNode",
+                "type": {
+                  "kind": "stringTypeNode",
+                  "encoding": "utf8"
+                },
+                "prefix": {
+                  "kind": "numberTypeNode",
+                  "format": "u32",
+                  "endian": "le"
+                }
+              },
+              "prefix": {
+                "kind": "numberTypeNode",
+                "format": "u8",
+                "endian": "le"
+              },
+              "fixed": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "multisigRemoveSpendingLimit",
+        "arguments": [
+          {
+            "name": "discriminator",
+            "type": {
+              "kind": "fixedSizeTypeNode",
+              "size": 8,
+              "type": {
+                "kind": "bytesTypeNode"
+              }
+            },
+            "defaultValueStrategy": "omitted",
+            "defaultValue": {
+              "kind": "bytesValueNode",
+              "data": "e4c6886f7b04b271",
+              "encoding": "base16"
+            }
+          },
+          {
+            "name": "memo",
+            "type": {
+              "kind": "optionTypeNode",
+              "item": {
+                "kind": "sizePrefixTypeNode",
+                "type": {
+                  "kind": "stringTypeNode",
+                  "encoding": "utf8"
+                },
+                "prefix": {
+                  "kind": "numberTypeNode",
+                  "format": "u32",
+                  "endian": "le"
+                }
+              },
+              "prefix": {
+                "kind": "numberTypeNode",
+                "format": "u8",
+                "endian": "le"
+              },
+              "fixed": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "configTransactionCreate",
+        "arguments": [
+          {
+            "name": "discriminator",
+            "type": {
+              "kind": "fixedSizeTypeNode",
+              "size": 8,
+              "type": {
+                "kind": "bytesTypeNode"
+              }
+            },
+            "defaultValueStrategy": "omitted",
+            "defaultValue": {
+              "kind": "bytesValueNode",
+              "data": "9bec57e4894b5127",
+              "encoding": "base16"
+            }
+          },
+          {
+            "name": "actions",
+            "type": {
+              "kind": "arrayTypeNode",
+              "item": {
+                "kind": "definedTypeLinkNode",
+                "name": "configAction"
+              },
+              "count": {
+                "kind": "prefixedCountNode",
+                "prefix": {
+                  "kind": "numberTypeNode",
+                  "format": "u32",
+                  "endian": "le"
+                }
+              }
+            }
+          },
+          {
+            "name": "memo",
+            "type": {
+              "kind": "optionTypeNode",
+              "item": {
+                "kind": "sizePrefixTypeNode",
+                "type": {
+                  "kind": "stringTypeNode",
+                  "encoding": "utf8"
+                },
+                "prefix": {
+                  "kind": "numberTypeNode",
+                  "format": "u32",
+                  "endian": "le"
+                }
+              },
+              "prefix": {
+                "kind": "numberTypeNode",
+                "format": "u8",
+                "endian": "le"
+              },
+              "fixed": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "configTransactionExecute",
+        "arguments": [
+          {
+            "name": "discriminator",
+            "type": {
+              "kind": "fixedSizeTypeNode",
+              "size": 8,
+              "type": {
+                "kind": "bytesTypeNode"
+              }
+            },
+            "defaultValueStrategy": "omitted",
+            "defaultValue": {
+              "kind": "bytesValueNode",
+              "data": "7292f4bdfc8c2428",
+              "encoding": "base16"
+            }
+          }
+        ]
+      },
+      {
+        "name": "vaultTransactionCreate",
+        "arguments": [
+          {
+            "name": "discriminator",
+            "type": {
+              "kind": "fixedSizeTypeNode",
+              "size": 8,
+              "type": {
+                "kind": "bytesTypeNode"
+              }
+            },
+            "defaultValueStrategy": "omitted",
+            "defaultValue": {
+              "kind": "bytesValueNode",
+              "data": "30fa4ea8d0e2dad3",
+              "encoding": "base16"
+            }
+          },
+          {
+            "name": "vaultIndex",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u8",
+              "endian": "le"
+            }
+          },
+          {
+            "name": "ephemeralSigners",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u8",
+              "endian": "le"
+            }
+          },
+          {
+            "name": "transactionMessage",
+            "type": {
+              "kind": "sizePrefixTypeNode",
+              "type": {
+                "kind": "bytesTypeNode"
+              },
+              "prefix": {
+                "kind": "numberTypeNode",
+                "format": "u32",
+                "endian": "le"
+              }
+            }
+          },
+          {
+            "name": "memo",
+            "type": {
+              "kind": "optionTypeNode",
+              "item": {
+                "kind": "sizePrefixTypeNode",
+                "type": {
+                  "kind": "stringTypeNode",
+                  "encoding": "utf8"
+                },
+                "prefix": {
+                  "kind": "numberTypeNode",
+                  "format": "u32",
+                  "endian": "le"
+                }
+              },
+              "prefix": {
+                "kind": "numberTypeNode",
+                "format": "u8",
+                "endian": "le"
+              },
+              "fixed": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "vaultTransactionExecute",
+        "arguments": [
+          {
+            "name": "discriminator",
+            "type": {
+              "kind": "fixedSizeTypeNode",
+              "size": 8,
+              "type": {
+                "kind": "bytesTypeNode"
+              }
+            },
+            "defaultValueStrategy": "omitted",
+            "defaultValue": {
+              "kind": "bytesValueNode",
+              "data": "c208a15799a419ab",
+              "encoding": "base16"
+            }
+          }
+        ]
+      },
+      {
+        "name": "batchCreate",
+        "arguments": [
+          {
+            "name": "discriminator",
+            "type": {
+              "kind": "fixedSizeTypeNode",
+              "size": 8,
+              "type": {
+                "kind": "bytesTypeNode"
+              }
+            },
+            "defaultValueStrategy": "omitted",
+            "defaultValue": {
+              "kind": "bytesValueNode",
+              "data": "c28e8d1137b914f8",
+              "encoding": "base16"
+            }
+          },
+          {
+            "name": "vaultIndex",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u8",
+              "endian": "le"
+            }
+          },
+          {
+            "name": "memo",
+            "type": {
+              "kind": "optionTypeNode",
+              "item": {
+                "kind": "sizePrefixTypeNode",
+                "type": {
+                  "kind": "stringTypeNode",
+                  "encoding": "utf8"
+                },
+                "prefix": {
+                  "kind": "numberTypeNode",
+                  "format": "u32",
+                  "endian": "le"
+                }
+              },
+              "prefix": {
+                "kind": "numberTypeNode",
+                "format": "u8",
+                "endian": "le"
+              },
+              "fixed": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "batchAddTransaction",
+        "arguments": [
+          {
+            "name": "discriminator",
+            "type": {
+              "kind": "fixedSizeTypeNode",
+              "size": 8,
+              "type": {
+                "kind": "bytesTypeNode"
+              }
+            },
+            "defaultValueStrategy": "omitted",
+            "defaultValue": {
+              "kind": "bytesValueNode",
+              "data": "5964e0124546364c",
+              "encoding": "base16"
+            }
+          },
+          {
+            "name": "ephemeralSigners",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u8",
+              "endian": "le"
+            }
+          },
+          {
+            "name": "transactionMessage",
+            "type": {
+              "kind": "sizePrefixTypeNode",
+              "type": {
+                "kind": "bytesTypeNode"
+              },
+              "prefix": {
+                "kind": "numberTypeNode",
+                "format": "u32",
+                "endian": "le"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "batchExecuteTransaction",
+        "arguments": [
+          {
+            "name": "discriminator",
+            "type": {
+              "kind": "fixedSizeTypeNode",
+              "size": 8,
+              "type": {
+                "kind": "bytesTypeNode"
+              }
+            },
+            "defaultValueStrategy": "omitted",
+            "defaultValue": {
+              "kind": "bytesValueNode",
+              "data": "ac2cb398157feab4",
+              "encoding": "base16"
+            }
+          }
+        ]
+      },
+      {
+        "name": "proposalCreate",
+        "arguments": [
+          {
+            "name": "discriminator",
+            "type": {
+              "kind": "fixedSizeTypeNode",
+              "size": 8,
+              "type": {
+                "kind": "bytesTypeNode"
+              }
+            },
+            "defaultValueStrategy": "omitted",
+            "defaultValue": {
+              "kind": "bytesValueNode",
+              "data": "dc3c49e01e6c4f9f",
+              "encoding": "base16"
+            }
+          },
+          {
+            "name": "transactionIndex",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u64",
+              "endian": "le"
+            }
+          },
+          {
+            "name": "draft",
+            "type": {
+              "kind": "booleanTypeNode",
+              "size": {
+                "kind": "numberTypeNode",
+                "format": "u8",
+                "endian": "le"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "proposalActivate",
+        "arguments": [
+          {
+            "name": "discriminator",
+            "type": {
+              "kind": "fixedSizeTypeNode",
+              "size": 8,
+              "type": {
+                "kind": "bytesTypeNode"
+              }
+            },
+            "defaultValueStrategy": "omitted",
+            "defaultValue": {
+              "kind": "bytesValueNode",
+              "data": "0b225cf89a1b336a",
+              "encoding": "base16"
+            }
+          }
+        ]
+      },
+      {
+        "name": "proposalApprove",
+        "arguments": [
+          {
+            "name": "discriminator",
+            "type": {
+              "kind": "fixedSizeTypeNode",
+              "size": 8,
+              "type": {
+                "kind": "bytesTypeNode"
+              }
+            },
+            "defaultValueStrategy": "omitted",
+            "defaultValue": {
+              "kind": "bytesValueNode",
+              "data": "9025a488bcd82af8",
+              "encoding": "base16"
+            }
+          },
+          {
+            "name": "args",
+            "type": {
+              "kind": "definedTypeLinkNode",
+              "name": "proposalVoteArgs"
+            }
+          }
+        ]
+      },
+      {
+        "name": "proposalReject",
+        "arguments": [
+          {
+            "name": "discriminator",
+            "type": {
+              "kind": "fixedSizeTypeNode",
+              "size": 8,
+              "type": {
+                "kind": "bytesTypeNode"
+              }
+            },
+            "defaultValueStrategy": "omitted",
+            "defaultValue": {
+              "kind": "bytesValueNode",
+              "data": "f33e869ce66af687",
+              "encoding": "base16"
+            }
+          },
+          {
+            "name": "args",
+            "type": {
+              "kind": "definedTypeLinkNode",
+              "name": "proposalVoteArgs"
+            }
+          }
+        ]
+      },
+      {
+        "name": "proposalCancel",
+        "arguments": [
+          {
+            "name": "discriminator",
+            "type": {
+              "kind": "fixedSizeTypeNode",
+              "size": 8,
+              "type": {
+                "kind": "bytesTypeNode"
+              }
+            },
+            "defaultValueStrategy": "omitted",
+            "defaultValue": {
+              "kind": "bytesValueNode",
+              "data": "1b2a7fed26a354cb",
+              "encoding": "base16"
+            }
+          },
+          {
+            "name": "args",
+            "type": {
+              "kind": "definedTypeLinkNode",
+              "name": "proposalVoteArgs"
+            }
+          }
+        ]
+      },
+      {
+        "name": "spendingLimitUse",
+        "arguments": [
+          {
+            "name": "discriminator",
+            "type": {
+              "kind": "fixedSizeTypeNode",
+              "size": 8,
+              "type": {
+                "kind": "bytesTypeNode"
+              }
+            },
+            "defaultValueStrategy": "omitted",
+            "defaultValue": {
+              "kind": "bytesValueNode",
+              "data": "1039827fc1149b86",
+              "encoding": "base16"
+            }
+          },
+          {
+            "name": "amount",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u64",
+              "endian": "le"
+            }
+          },
+          {
+            "name": "decimals",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u8",
+              "endian": "le"
+            }
+          },
+          {
+            "name": "memo",
+            "type": {
+              "kind": "optionTypeNode",
+              "item": {
+                "kind": "sizePrefixTypeNode",
+                "type": {
+                  "kind": "stringTypeNode",
+                  "encoding": "utf8"
+                },
+                "prefix": {
+                  "kind": "numberTypeNode",
+                  "format": "u32",
+                  "endian": "le"
+                }
+              },
+              "prefix": {
+                "kind": "numberTypeNode",
+                "format": "u8",
+                "endian": "le"
+              },
+              "fixed": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "configTransactionAccountsClose",
+        "arguments": [
+          {
+            "name": "discriminator",
+            "type": {
+              "kind": "fixedSizeTypeNode",
+              "size": 8,
+              "type": {
+                "kind": "bytesTypeNode"
+              }
+            },
+            "defaultValueStrategy": "omitted",
+            "defaultValue": {
+              "kind": "bytesValueNode",
+              "data": "50cb54359770bbba",
+              "encoding": "base16"
+            }
+          }
+        ]
+      },
+      {
+        "name": "vaultTransactionAccountsClose",
+        "arguments": [
+          {
+            "name": "discriminator",
+            "type": {
+              "kind": "fixedSizeTypeNode",
+              "size": 8,
+              "type": {
+                "kind": "bytesTypeNode"
+              }
+            },
+            "defaultValueStrategy": "omitted",
+            "defaultValue": {
+              "kind": "bytesValueNode",
+              "data": "c447bbb00223aaa5",
+              "encoding": "base16"
+            }
+          }
+        ]
+      },
+      {
+        "name": "vaultBatchTransactionAccountClose",
+        "arguments": [
+          {
+            "name": "discriminator",
+            "type": {
+              "kind": "fixedSizeTypeNode",
+              "size": 8,
+              "type": {
+                "kind": "bytesTypeNode"
+              }
+            },
+            "defaultValueStrategy": "omitted",
+            "defaultValue": {
+              "kind": "bytesValueNode",
+              "data": "8612136a814461f7",
+              "encoding": "base16"
+            }
+          }
+        ]
+      },
+      {
+        "name": "batchAccountsClose",
+        "arguments": [
+          {
+            "name": "discriminator",
+            "type": {
+              "kind": "fixedSizeTypeNode",
+              "size": 8,
+              "type": {
+                "kind": "bytesTypeNode"
+              }
+            },
+            "defaultValueStrategy": "omitted",
+            "defaultValue": {
+              "kind": "bytesValueNode",
+              "data": "dac407af82660bff",
+              "encoding": "base16"
+            }
+          }
+        ]
+      }
+    ],
+    "definedTypes": [
+      {
+        "name": "proposalVoteArgs",
+        "type": {
+          "kind": "structTypeNode",
+          "fields": [
+            {
+              "name": "memo",
+              "type": {
+                "kind": "optionTypeNode",
+                "item": {
+                  "kind": "sizePrefixTypeNode",
+                  "type": {
+                    "kind": "stringTypeNode",
+                    "encoding": "utf8"
+                  },
+                  "prefix": {
+                    "kind": "numberTypeNode",
+                    "format": "u32",
+                    "endian": "le"
+                  }
+                },
+                "prefix": {
+                  "kind": "numberTypeNode",
+                  "format": "u8",
+                  "endian": "le"
+                },
+                "fixed": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "name": "member",
+        "type": {
+          "kind": "structTypeNode",
+          "fields": [
+            {
+              "name": "key",
+              "type": {
+                "kind": "publicKeyTypeNode"
+              }
+            },
+            {
+              "name": "permissions",
+              "type": {
+                "kind": "definedTypeLinkNode",
+                "name": "permissions"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "name": "permissions",
+        "type": {
+          "kind": "structTypeNode",
+          "fields": [
+            {
+              "name": "mask",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u8",
+                "endian": "le"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "name": "configAction",
+        "type": {
+          "kind": "enumTypeNode",
+          "variants": [
+            {
+              "kind": "enumStructVariantTypeNode",
+              "name": "addMember",
+              "struct": {
+                "fields": [
+                  {
+                    "name": "newMember",
+                    "type": {
+                      "kind": "definedTypeLinkNode",
+                      "name": "member"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "kind": "enumStructVariantTypeNode",
+              "name": "removeMember",
+              "struct": {
+                "fields": [
+                  {
+                    "name": "oldMember",
+                    "type": {
+                      "kind": "publicKeyTypeNode"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "kind": "enumStructVariantTypeNode",
+              "name": "changeThreshold",
+              "struct": {
+                "fields": [
+                  {
+                    "name": "newThreshold",
+                    "type": {
+                      "kind": "numberTypeNode",
+                      "format": "u16",
+                      "endian": "le"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "kind": "enumStructVariantTypeNode",
+              "name": "setTimeLock",
+              "struct": {
+                "fields": [
+                  {
+                    "name": "newTimeLock",
+                    "type": {
+                      "kind": "numberTypeNode",
+                      "format": "u32",
+                      "endian": "le"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "kind": "enumStructVariantTypeNode",
+              "name": "addSpendingLimit",
+              "struct": {
+                "fields": [
+                  {
+                    "name": "createKey",
+                    "type": {
+                      "kind": "publicKeyTypeNode"
+                    }
+                  },
+                  {
+                    "name": "vaultIndex",
+                    "type": {
+                      "kind": "numberTypeNode",
+                      "format": "u8",
+                      "endian": "le"
+                    }
+                  },
+                  {
+                    "name": "mint",
+                    "type": {
+                      "kind": "publicKeyTypeNode"
+                    }
+                  },
+                  {
+                    "name": "amount",
+                    "type": {
+                      "kind": "numberTypeNode",
+                      "format": "u64",
+                      "endian": "le"
+                    }
+                  },
+                  {
+                    "name": "period",
+                    "type": {
+                      "kind": "definedTypeLinkNode",
+                      "name": "period"
+                    }
+                  },
+                  {
+                    "name": "members",
+                    "type": {
+                      "kind": "arrayTypeNode",
+                      "item": {
+                        "kind": "publicKeyTypeNode"
+                      },
+                      "count": {
+                        "kind": "prefixedCountNode",
+                        "prefix": {
+                          "kind": "numberTypeNode",
+                          "format": "u32",
+                          "endian": "le"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "name": "destinations",
+                    "type": {
+                      "kind": "arrayTypeNode",
+                      "item": {
+                        "kind": "publicKeyTypeNode"
+                      },
+                      "count": {
+                        "kind": "prefixedCountNode",
+                        "prefix": {
+                          "kind": "numberTypeNode",
+                          "format": "u32",
+                          "endian": "le"
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "kind": "enumStructVariantTypeNode",
+              "name": "removeSpendingLimit",
+              "struct": {
+                "fields": [
+                  {
+                    "name": "spendingLimit",
+                    "type": {
+                      "kind": "publicKeyTypeNode"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "kind": "enumStructVariantTypeNode",
+              "name": "setRentCollector",
+              "struct": {
+                "fields": [
+                  {
+                    "name": "newRentCollector",
+                    "type": {
+                      "kind": "optionTypeNode",
+                      "item": {
+                        "kind": "publicKeyTypeNode"
+                      },
+                      "prefix": {
+                        "kind": "numberTypeNode",
+                        "format": "u8",
+                        "endian": "le"
+                      },
+                      "fixed": false
+                    }
+                  }
+                ]
+              }
+            }
+          ],
+          "size": {
+            "kind": "numberTypeNode",
+            "format": "u8",
+            "endian": "le"
+          }
+        }
+      },
+      {
+        "name": "period",
+        "type": {
+          "kind": "enumTypeNode",
+          "variants": [
+            {
+              "kind": "enumEmptyVariantTypeNode",
+              "name": "oneTime"
+            },
+            {
+              "kind": "enumEmptyVariantTypeNode",
+              "name": "day"
+            },
+            {
+              "kind": "enumEmptyVariantTypeNode",
+              "name": "week"
+            },
+            {
+              "kind": "enumEmptyVariantTypeNode",
+              "name": "month"
+            }
+          ],
+          "size": {
+            "kind": "numberTypeNode",
+            "format": "u8",
+            "endian": "le"
+          }
+        }
+      }
+    ]
+  }
+}

@@ -1,10 +1,8 @@
 use crate::AppSW;
 use ledger_device_sdk::ecc::Ed25519;
 
+use crate::squads_tx::{BLOCKHASH_LENGTH, PROPOSAL_VOTE_APPROVE, PROPOSAL_VOTE_REJECT};
 use crate::storage::{SavedMultisigEntry, MAX_DERIVATION_PATH_LENGTH, PUBKEY_LENGTH};
-use crate::squads_tx::{
-    BLOCKHASH_LENGTH, PROPOSAL_VOTE_APPROVE, PROPOSAL_VOTE_REJECT,
-};
 
 pub const APP_CLA: u8 = 0xe0;
 pub const P1_CONFIRM: u8 = 0x00;
@@ -47,7 +45,9 @@ pub struct ProposalExecuteUpgradeRequest {
     pub blockhash: [u8; BLOCKHASH_LENGTH],
 }
 
-pub fn parse_derivation_path(data: &[u8]) -> Result<([u32; MAX_DERIVATION_PATH_LENGTH], u8, usize), AppSW> {
+pub fn parse_derivation_path(
+    data: &[u8],
+) -> Result<([u32; MAX_DERIVATION_PATH_LENGTH], u8, usize), AppSW> {
     if data.is_empty() {
         return Err(AppSW::WrongApduLength);
     }
@@ -154,7 +154,8 @@ pub fn parse_proposal_create_upgrade_request(
 
     let mut multisig = [0u8; PUBKEY_LENGTH];
     multisig.copy_from_slice(&data[..32]);
-    let transaction_index = u64::from_le_bytes(data[32..40].try_into().map_err(|_| AppSW::InvalidData)?);
+    let transaction_index =
+        u64::from_le_bytes(data[32..40].try_into().map_err(|_| AppSW::InvalidData)?);
     let vault_index = data[40];
 
     let mut program = [0u8; PUBKEY_LENGTH];
@@ -189,7 +190,8 @@ pub fn parse_proposal_execute_upgrade_request(
 
     let mut multisig = [0u8; PUBKEY_LENGTH];
     multisig.copy_from_slice(&data[..32]);
-    let transaction_index = u64::from_le_bytes(data[32..40].try_into().map_err(|_| AppSW::InvalidData)?);
+    let transaction_index =
+        u64::from_le_bytes(data[32..40].try_into().map_err(|_| AppSW::InvalidData)?);
     let vault_index = data[40];
 
     let mut program = [0u8; PUBKEY_LENGTH];

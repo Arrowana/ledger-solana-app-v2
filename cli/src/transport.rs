@@ -5,7 +5,9 @@ use std::time::Duration;
 use anyhow::{anyhow, bail, Context, Result};
 use hidapi::{DeviceInfo, HidApi, HidDevice};
 
-use crate::constants::{HID_CHANNEL, HID_TAG_APDU, LEDGER_VENDOR_ID, TransportKind};
+use crate::constants::{TransportKind, HID_CHANNEL, HID_TAG_APDU, LEDGER_VENDOR_ID};
+
+const DEFAULT_APDU_TIMEOUT_MS: u64 = 120_000;
 
 pub trait DeviceTransport {
     fn exchange(&mut self, apdu: &[u8]) -> Result<Vec<u8>>;
@@ -45,13 +47,14 @@ pub struct SpeculosTransport {
 
 impl SpeculosTransport {
     pub fn connect(host: &str, port: u16) -> Result<Self> {
+        let timeout = command_timeout();
         let socket = TcpStream::connect((host, port))
             .with_context(|| format!("failed to connect to Speculos at {host}:{port}"))?;
         socket
-            .set_read_timeout(Some(Duration::from_secs(5)))
+            .set_read_timeout(Some(timeout))
             .context("failed to configure Speculos read timeout")?;
         socket
-            .set_write_timeout(Some(Duration::from_secs(5)))
+            .set_write_timeout(Some(timeout))
             .context("failed to configure Speculos write timeout")?;
         Ok(Self { socket })
     }
@@ -150,8 +153,9 @@ fn wrap_apdu(apdu: &[u8]) -> Vec<Vec<u8>> {
 }
 
 fn unwrap_response(device: &HidDevice) -> Result<Vec<u8>> {
+    let timeout_ms = command_timeout_ms();
     let mut buffer = [0u8; 65];
-    let first_len = device.read_timeout(&mut buffer, 5000)?;
+    let first_len = device.read_timeout(&mut buffer, timeout_ms)?;
     if first_len == 0 {
         bail!("timeout waiting for Ledger HID response");
     }
@@ -167,7 +171,7 @@ fn unwrap_response(device: &HidDevice) -> Result<Vec<u8>> {
 
     let mut sequence: u16 = 1;
     while out.len() < total_len {
-        let len = device.read_timeout(&mut buffer, 5000)?;
+        let len = device.read_timeout(&mut buffer, timeout_ms)?;
         if len == 0 {
             bail!("timeout waiting for continuation HID frame");
         }
@@ -179,6 +183,19 @@ fn unwrap_response(device: &HidDevice) -> Result<Vec<u8>> {
 
     out.truncate(total_len);
     Ok(out)
+}
+
+fn command_timeout() -> Duration {
+    Duration::from_millis(command_timeout_ms() as u64)
+}
+
+fn command_timeout_ms() -> i32 {
+    std::env::var("LEDGER_SQUADS_APDU_TIMEOUT_MS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(DEFAULT_APDU_TIMEOUT_MS)
+        .min(i32::MAX as u64) as i32
 }
 
 fn normalize_hid_packet(packet: &[u8]) -> Result<&[u8]> {
@@ -201,4 +218,3 @@ fn validate_frame_header(packet: &[u8], expected_sequence: u16) -> Result<()> {
     }
     Ok(())
 }
-
