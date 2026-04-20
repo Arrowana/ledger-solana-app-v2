@@ -5,6 +5,7 @@ use crate::{
     AppSW,
 };
 use codama_parser::{DecodedField, DecodedInstruction, DecodedNumber, DecodedValue};
+use ledger_device_sdk::hash::{sha2::Sha2_256, HashInit};
 use ledger_device_sdk::include_gif;
 use ledger_device_sdk::io::Comm;
 use ledger_device_sdk::nbgl::{
@@ -24,6 +25,7 @@ const APP_GLYPH: NbglGlyph =
     NbglGlyph::from_include(include_gif!("glyphs/home_nano_nbgl.png", NBGL));
 
 const IX_DATA_CHUNK_BYTES: usize = 16;
+const MESSAGE_HASH_LENGTH: usize = 32;
 
 struct OwnedField {
     name: String,
@@ -48,6 +50,11 @@ pub fn review_message<const N: usize>(
             builtin_idls.as_slice(),
         )?;
     }
+
+    owned_fields.push(OwnedField {
+        name: String::from("Message SHA-256"),
+        value: format_message_hash(message)?,
+    });
 
     let rendered_fields: Vec<Field<'_>> = owned_fields
         .iter()
@@ -293,4 +300,12 @@ fn format_lookup_account(account: LookupAccountRefView<'_>) -> String {
 
 fn format_base58(bytes: &[u8]) -> String {
     bs58::encode(bytes).into_string()
+}
+
+fn format_message_hash(message: &[u8]) -> Result<String, AppSW> {
+    let mut digest = [0u8; MESSAGE_HASH_LENGTH];
+    Sha2_256::new()
+        .hash(message, &mut digest)
+        .map_err(|_| AppSW::CommError)?;
+    Ok(format_base58(&digest))
 }

@@ -19,6 +19,7 @@ use ledger_solana_cli::transport::{DeviceTransport, SpeculosTransport};
 use reqwest::blocking::Client;
 use serde::Deserialize;
 use serde_json::json;
+use sha2::{Digest, Sha256};
 use solana_instruction::{AccountMeta, Instruction};
 use solana_message::Message;
 use solana_pubkey::Pubkey;
@@ -105,8 +106,13 @@ struct ExpectedScreen {
 struct SmokeCase {
     name: SmokeCaseName,
     message: Vec<u8>,
+    message_hash: String,
     expected_screens: &'static [ExpectedScreen],
 }
+
+const MESSAGE_HASH_SCREEN: ExpectedScreen = ExpectedScreen {
+    fragments: &["Message SHA-256"],
+};
 
 const SYSTEM_TRANSFER_SCREENS: &[ExpectedScreen] = &[
     ExpectedScreen {
@@ -381,6 +387,7 @@ fn run_sign_case(
     manual_review: bool,
 ) -> Result<()> {
     println!("==> Running case {}", case.name.slug());
+    println!("    Message SHA-256: {}", case.message_hash);
     let message = case.message.clone();
     let path = derivation_path.to_vec();
     let (tx, rx) = mpsc::channel();
@@ -395,10 +402,12 @@ fn run_sign_case(
     if manual_review {
         println!("==> Manual review enabled for {}", case.name.slug());
         println!("    Continue in the Speculos web UI: {}", api.base_url);
+        println!("    Message SHA-256: {}", case.message_hash);
         println!("    Expected decoded screens:");
         for expected in case.expected_screens {
             println!("      - {}", expected.fragments.join(" / "));
         }
+        println!("      - {}", MESSAGE_HASH_SCREEN.fragments.join(" / "));
         println!("    Waiting for manual approval in the web UI...");
 
         let signature = wait_for_sign_result(rx, case.name, true)?;
@@ -439,6 +448,15 @@ fn run_sign_case(
             render_screens(&screens)
         );
     }
+    ensure!(
+        screens
+            .iter()
+            .any(|screen| screen_contains_all(screen, MESSAGE_HASH_SCREEN.fragments)),
+        "review flow for {} missing expected screen {:?}; collected screens: {}",
+        case.name.slug(),
+        MESSAGE_HASH_SCREEN.fragments,
+        render_screens(&screens)
+    );
 
     api.press_button("both")?;
     let signature = wait_for_sign_result(rx, case.name, false)?;
@@ -518,10 +536,12 @@ fn build_case(case: SmokeCaseName) -> Result<SmokeCase> {
         SmokeCaseName::AtaCreate => build_ata_create_message()?,
         SmokeCaseName::TokenTransfer => build_token_transfer_message()?,
     };
+    let message_hash = message_sha256(&message);
 
     Ok(SmokeCase {
         name: case,
         message,
+        message_hash,
         expected_screens,
     })
 }
@@ -588,6 +608,13 @@ fn build_token_transfer_message() -> Result<Vec<u8>> {
 
 fn build_legacy_message(payer: &Pubkey, instructions: &[Instruction]) -> Vec<u8> {
     Message::new(instructions, Some(payer)).serialize()
+}
+
+fn message_sha256(message: &[u8]) -> String {
+    let digest = Sha256::digest(message);
+    bs58::encode(digest)
+        .with_alphabet(Alphabet::BITCOIN)
+        .into_string()
 }
 
 fn system_transfer_data(amount: u64) -> Vec<u8> {
