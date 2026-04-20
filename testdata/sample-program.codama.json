@@ -1,0 +1,205 @@
+{
+  "kind": "rootNode",
+  "standard": "codama",
+  "program": {
+    "name": "sampleOperations",
+    "publicKey": "11111111111111111111111111111111",
+    "version": "1.0.0",
+    "origin": "test",
+    "instructions": [
+      {
+        "name": "approveAction",
+        "arguments": [
+          {
+            "name": "discriminator",
+            "defaultValueStrategy": "omitted",
+            "type": {
+              "kind": "fixedSizeTypeNode",
+              "size": 8,
+              "type": {
+                "kind": "bytesTypeNode"
+              }
+            },
+            "defaultValue": {
+              "kind": "bytesValueNode",
+              "data": "0102030405060708",
+              "encoding": "base16"
+            }
+          },
+          {
+            "name": "args",
+            "type": {
+              "kind": "definedTypeLinkNode",
+              "name": "approvalArgs"
+            }
+          }
+        ]
+      },
+      {
+        "name": "submitPayload",
+        "arguments": [
+          {
+            "name": "discriminator",
+            "defaultValueStrategy": "omitted",
+            "type": {
+              "kind": "fixedSizeTypeNode",
+              "size": 8,
+              "type": {
+                "kind": "bytesTypeNode"
+              }
+            },
+            "defaultValue": {
+              "kind": "bytesValueNode",
+              "data": "1112131415161718",
+              "encoding": "base16"
+            }
+          },
+          {
+            "name": "channel",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u8",
+              "endian": "le"
+            }
+          },
+          {
+            "name": "target",
+            "type": {
+              "kind": "publicKeyTypeNode"
+            }
+          },
+          {
+            "name": "payload",
+            "type": {
+              "kind": "sizePrefixTypeNode",
+              "type": {
+                "kind": "bytesTypeNode"
+              },
+              "prefix": {
+                "kind": "numberTypeNode",
+                "format": "u32",
+                "endian": "le"
+              }
+            }
+          },
+          {
+            "name": "priority",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u16",
+              "endian": "le"
+            }
+          }
+        ]
+      },
+      {
+        "name": "reviewRequest",
+        "arguments": [
+          {
+            "name": "discriminator",
+            "defaultValueStrategy": "omitted",
+            "type": {
+              "kind": "fixedSizeTypeNode",
+              "size": 8,
+              "type": {
+                "kind": "bytesTypeNode"
+              }
+            },
+            "defaultValue": {
+              "kind": "bytesValueNode",
+              "data": "2122232425262728",
+              "encoding": "base16"
+            }
+          },
+          {
+            "name": "requestIndex",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u64",
+              "endian": "le"
+            }
+          },
+          {
+            "name": "urgent",
+            "type": {
+              "kind": "booleanTypeNode",
+              "size": {
+                "kind": "numberTypeNode",
+                "format": "u8",
+                "endian": "le"
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "definedTypes": [
+      {
+        "name": "approvalArgs",
+        "type": {
+          "kind": "structTypeNode",
+          "fields": [
+            {
+              "name": "approved",
+              "type": {
+                "kind": "booleanTypeNode",
+                "size": {
+                  "kind": "numberTypeNode",
+                  "format": "u8",
+                  "endian": "le"
+                }
+              }
+            },
+            {
+              "name": "reviewer",
+              "type": {
+                "kind": "publicKeyTypeNode"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "name": "reviewState",
+        "type": {
+          "kind": "enumTypeNode",
+          "variants": [
+            {
+              "kind": "enumEmptyVariantTypeNode",
+              "name": "pending"
+            },
+            {
+              "kind": "enumEmptyVariantTypeNode",
+              "name": "approved"
+            },
+            {
+              "kind": "enumEmptyVariantTypeNode",
+              "name": "rejected"
+            },
+            {
+              "kind": "enumEmptyVariantTypeNode",
+              "name": "scheduled"
+            },
+            {
+              "kind": "enumEmptyVariantTypeNode",
+              "name": "executing"
+            },
+            {
+              "kind": "enumEmptyVariantTypeNode",
+              "name": "executed"
+            },
+            {
+              "kind": "enumEmptyVariantTypeNode",
+              "name": "cancelled"
+            }
+          ],
+          "size": {
+            "kind": "numberTypeNode",
+            "format": "u8",
+            "endian": "le"
+          }
+        }
+      }
+    ]
+  }
+}

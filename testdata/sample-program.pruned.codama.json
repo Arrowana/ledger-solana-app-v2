@@ -1,0 +1,53 @@
+{
+  "kind": "rootNode",
+  "standard": "codama",
+  "program": {
+    "name": "sampleOperations",
+    "publicKey": "11111111111111111111111111111111",
+    "version": "1.0.0",
+    "origin": "test",
+    "instructions": [
+      {
+        "name": "reviewRequest",
+        "arguments": [
+          {
+            "name": "discriminator",
+            "defaultValueStrategy": "omitted",
+            "type": {
+              "kind": "fixedSizeTypeNode",
+              "size": 8,
+              "type": {
+                "kind": "bytesTypeNode"
+              }
+            },
+            "defaultValue": {
+              "kind": "bytesValueNode",
+              "data": "2122232425262728",
+              "encoding": "base16"
+            }
+          },
+          {
+            "name": "requestIndex",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u64",
+              "endian": "le"
+            }
+          },
+          {
+            "name": "urgent",
+            "type": {
+              "kind": "booleanTypeNode",
+              "size": {
+                "kind": "numberTypeNode",
+                "format": "u8",
+                "endian": "le"
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "definedTypes": []
+  }
+}

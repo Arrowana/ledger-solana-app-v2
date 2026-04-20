@@ -1,0 +1,15 @@
+{
+  "name": "ledger-solana-app-v2",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@codama/nodes-from-anchor": "^1.4.1"
+  }
+}

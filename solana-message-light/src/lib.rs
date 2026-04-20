@@ -808,19 +808,19 @@ mod tests {
         VersionedMessage as UpstreamVersionedMessage,
     };
 
-    const SQUADS_IDL: &[u8] = include_bytes!(concat!(
+    const SAMPLE_IDL: &[u8] = include_bytes!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../squads-v4.codama.json"
+        "/../testdata/sample-program.codama.json"
     ));
 
     #[test]
-    fn iterates_legacy_message_view_and_decodes_proposal_create_instruction() {
+    fn iterates_legacy_message_view_and_decodes_review_request_instruction() {
         let message = build_legacy_message(
             &[1u8; 32],
             &[2u8; 32],
             &[3u8; 32],
             &[4u8; 32],
-            &proposal_create_data(42, true),
+            &review_request_data(42, true),
         );
 
         let view = MessageView::try_new(&message).unwrap();
@@ -839,9 +839,9 @@ mod tests {
             }) if *pubkey == [4u8; 32]
         ));
 
-        let program = parse_program_index(SQUADS_IDL).unwrap();
+        let program = parse_program_index(SAMPLE_IDL).unwrap();
         let decoded = program.decode_instruction_data(instruction.data).unwrap();
-        assert_eq!(decoded.name, "proposalCreate");
+        assert_eq!(decoded.name, "reviewRequest");
         assert_eq!(decoded.arguments.len(), 2);
         assert!(matches!(
             decoded.arguments[0].value,
@@ -875,17 +875,17 @@ mod tests {
         ));
     }
 
-    fn proposal_create_data(transaction_index: u64, draft: bool) -> Vec<u8> {
-        let mut out = hex::decode("dc3c49e01e6c4f9f").unwrap();
-        out.extend_from_slice(&transaction_index.to_le_bytes());
-        out.push(u8::from(draft));
+    fn review_request_data(request_index: u64, urgent: bool) -> Vec<u8> {
+        let mut out = hex::decode("2122232425262728").unwrap();
+        out.extend_from_slice(&request_index.to_le_bytes());
+        out.push(u8::from(urgent));
         out
     }
 
     fn build_legacy_message(
         signer: &[u8; 32],
-        multisig: &[u8; 32],
-        proposal: &[u8; 32],
+        request: &[u8; 32],
+        resource: &[u8; 32],
         program: &[u8; 32],
         instruction_data: &[u8],
     ) -> Vec<u8> {
@@ -897,8 +897,8 @@ mod tests {
             },
             account_keys: vec![
                 UpstreamAddress::from(*signer),
-                UpstreamAddress::from(*multisig),
-                UpstreamAddress::from(*proposal),
+                UpstreamAddress::from(*request),
+                UpstreamAddress::from(*resource),
                 UpstreamAddress::from(*program),
             ],
             recent_blockhash: UpstreamHash::new_from_array([5u8; 32]),

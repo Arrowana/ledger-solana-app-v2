@@ -11,6 +11,8 @@ def type_refs:
 def prune_value:
   if .kind == "bytesValueNode" then
     { kind, data, encoding }
+  elif .kind == "numberValueNode" then
+    { kind, number }
   else
     { kind }
   end;
@@ -21,6 +23,8 @@ def prune_type:
       { kind, value }
     elif .kind == "prefixedCountNode" then
       { kind, prefix: (.prefix | prune_type) }
+    elif .kind == "remainderCountNode" then
+      { kind }
     else
       error("unsupported count kind: \(.kind // "null")")
     end;
@@ -58,6 +62,8 @@ def prune_type:
       item: (.item | prune_type),
       prefix: (.prefix | prune_type)
     } + (if has("fixed") then { fixed } else {} end))
+  elif .kind == "zeroableOptionTypeNode" then
+    { kind, item: (.item | prune_type) }
   elif .kind == "arrayTypeNode" then
     { kind, item: (.item | prune_type), count: (.count | prune_count) }
   elif .kind == "structTypeNode" then
@@ -75,15 +81,25 @@ def prune_argument:
     name,
     type: (.type | prune_type)
   } + (if has("defaultValueStrategy") then { defaultValueStrategy } else {} end)
-    + (if has("defaultValue") then { defaultValue: (.defaultValue | prune_value) } else {} end));
+    + (if (.defaultValueStrategy? != null) and has("defaultValue") then
+         { defaultValue: (.defaultValue | prune_value) }
+       else
+         {}
+       end));
+
+def prune_account:
+  { name };
 
 def prune_instruction:
-  { name, arguments: (.arguments | map(prune_argument)) };
+  ({
+    name,
+    arguments: (.arguments | map(prune_argument))
+  } + (if has("accounts") then { accounts: (.accounts | map(prune_account)) } else {} end));
 
 def prune_defined_type:
   { name, type: (.type | prune_type) };
 
-.program.definedTypes as $all_defs
+(.program.definedTypes // []) as $all_defs
 | ($all_defs | map({ key: .name, value: . }) | from_entries) as $defs
 | (.program.instructions | map(prune_instruction)) as $instructions
 | ([ $instructions[] | .arguments[] | .type | type_refs[] ] | unique) as $root_refs
@@ -106,7 +122,7 @@ def prune_defined_type:
   reachable($root_refs; []) as $keep_names
 | {
     kind,
-    standard,
+    standard: (.standard // "codama"),
     program: {
       name: .program.name,
       publicKey: .program.publicKey,

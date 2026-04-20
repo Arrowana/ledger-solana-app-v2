@@ -35,13 +35,18 @@ cleanup() {
 trap cleanup EXIT
 
 "$DOCKER_BIN" run --rm "${DOCKER_TTY_ARGS[@]}" \
-  -v "$ROOT_DIR:/app" \
+  -v "$ROOT_DIR/ledger-app:/app/ledger-app" \
+  -v "$ROOT_DIR/codama-parser:/app/codama-parser" \
+  -v "$ROOT_DIR/solana-message-light:/app/solana-message-light" \
+  -v "$ROOT_DIR/idls:/app/idls" \
+  -v "$TARGET_DIR:/app/target" \
   --user "$(id -u):$(id -g)" \
   -e LEDGER_DEVICE="$LEDGER_DEVICE" \
   "$IMAGE" \
   /bin/bash -lc '
 set -euo pipefail
 export PATH="/opt/.cargo/bin:$PATH"
+export CARGO_TARGET_DIR=/app/target
 cd /app/ledger-app
 cargo ledger build "$LEDGER_DEVICE"
 ' | tee "$BUILD_LOG"

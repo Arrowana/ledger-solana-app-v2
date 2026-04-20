@@ -1,5 +1,5 @@
 [package]
-name = "ledger-squads-cli"
+name = "ledger-solana-cli"
 version = "0.1.0"
 edition = "2021"
 
@@ -18,7 +18,7 @@ solana-message-light = { path = "../solana-message-light" }
 [dev-dependencies]
 
 [[bin]]
-name = "ledger-squads-cli"
+name = "ledger-solana-cli"
 path = "src/main.rs"
 
 [[bin]]

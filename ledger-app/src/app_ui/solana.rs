@@ -1,14 +1,17 @@
-use alloc::{format, string::String};
+use alloc::{format, string::String, vec::Vec};
 
-use crate::AppSW;
+use crate::{
+    idls::{decode_instruction as decode_builtin_instruction, load_builtin_idls, LoadedBuiltinIdl},
+    AppSW,
+};
+use codama_parser::{DecodedField, DecodedInstruction, DecodedNumber, DecodedValue};
 use ledger_device_sdk::include_gif;
 use ledger_device_sdk::io::Comm;
 use ledger_device_sdk::nbgl::{
-    Field, NbglGlyph, NbglReviewStatus, NbglStreamingReview, NbglStreamingReviewStatus, StatusType,
-    TransactionType,
+    Field, NbglGlyph, NbglReview, NbglReviewStatus, StatusType, TransactionType,
 };
 use solana_message_light::{
-    AccountRefView, CompiledInstructionView, LookupAccountRefView, MessageVersion, MessageView,
+    AccountRefView, CompiledInstructionView, LookupAccountRefView, MessageView,
     StaticAccountRefView,
 };
 
@@ -22,79 +25,44 @@ const APP_GLYPH: NbglGlyph =
 
 const IX_DATA_CHUNK_BYTES: usize = 16;
 
-pub fn review_message(signer_pubkey: &[u8; 32], message: &[u8]) -> Result<bool, AppSW> {
+struct OwnedField {
+    name: String,
+    value: String,
+}
+
+pub fn review_message<const N: usize>(
+    comm: &mut Comm<N>,
+    _signer_pubkey: &[u8; 32],
+    message: &[u8],
+) -> Result<bool, AppSW> {
     let view = MessageView::try_new(message).map_err(|_| AppSW::InvalidData)?;
-    let review = NbglStreamingReview::new()
-        .tx_type(TransactionType::Transaction)
-        .glyph(&APP_GLYPH);
-
-    if !review.start("Review Solana tx", None) {
-        return Ok(false);
-    }
-
-    let version = match view.version {
-        MessageVersion::Legacy => "Legacy",
-        MessageVersion::V0 => "V0",
-    };
-    let instruction_count = format!("{}", view.instruction_count());
-    let account_count = format!("{}", view.total_account_count());
-    if !push_page(
-        &review,
-        &[
-            Field {
-                name: "Version",
-                value: version,
-            },
-            Field {
-                name: "Instructions",
-                value: instruction_count.as_str(),
-            },
-            Field {
-                name: "Accounts",
-                value: account_count.as_str(),
-            },
-        ],
-    ) {
-        return Ok(false);
-    }
-
-    let signer = format_base58(signer_pubkey);
-    let fee_payer = format_base58(view.static_account(0).ok_or(AppSW::InvalidData)?);
-    if !push_page(
-        &review,
-        &[
-            Field {
-                name: "Signer",
-                value: signer.as_str(),
-            },
-            Field {
-                name: "Fee payer",
-                value: fee_payer.as_str(),
-            },
-        ],
-    ) {
-        return Ok(false);
-    }
-
-    let blockhash = format_base58(view.recent_blockhash());
-    if !push_page(
-        &review,
-        &[Field {
-            name: "Blockhash",
-            value: blockhash.as_str(),
-        }],
-    ) {
-        return Ok(false);
-    }
+    let builtin_idls = load_builtin_idls();
+    let mut owned_fields = Vec::new();
 
     for instruction in view.instructions() {
         let instruction = instruction.map_err(|_| AppSW::InvalidData)?;
-        if !review_instruction(&review, &view, instruction)? {
-            return Ok(false);
-        }
+        review_instruction(
+            &mut owned_fields,
+            &view,
+            instruction,
+            builtin_idls.as_slice(),
+        )?;
     }
 
-    Ok(review.finish("Sign transaction"))
+    let rendered_fields: Vec<Field<'_>> = owned_fields
+        .iter()
+        .map(|field| Field {
+            name: field.name.as_str(),
+            value: field.value.as_str(),
+        })
+        .collect();
+
+    Ok(NbglReview::new()
+        .tx_type(TransactionType::Transaction)
+        .glyph(&APP_GLYPH)
+        .light()
+        .titles("Review Solana tx", "", "Sign transaction")
+        .show(comm, rendered_fields.as_slice()))
 }
 
 pub fn show_status<const N: usize>(comm: &mut Comm<N>, ok: bool) {
@@ -104,98 +72,192 @@ pub fn show_status<const N: usize>(comm: &mut Comm<N>, ok: bool) {
 }
 
 fn review_instruction(
-    review: &NbglStreamingReview,
+    fields: &mut Vec<OwnedField>,
     view: &MessageView<'_>,
     instruction: CompiledInstructionView<'_>,
-) -> Result<bool, AppSW> {
+    builtin_idls: &[LoadedBuiltinIdl],
+) -> Result<(), AppSW> {
     let instruction_title = format!("{} / {}", instruction.index + 1, view.instruction_count());
-    let program = match view
+    let program_ref = view
         .account_ref(instruction.program_id_index)
-        .map_err(|_| AppSW::InvalidData)?
-    {
-        AccountRefView::Static(account) => format_base58(account.pubkey),
-        AccountRefView::Lookup(_) => return Err(AppSW::InvalidData),
+        .map_err(|_| AppSW::InvalidData)?;
+    let (program, decoded) = match program_ref {
+        AccountRefView::Static(account) => (
+            format_base58(account.pubkey),
+            decode_builtin_instruction(builtin_idls, account.pubkey, instruction.data),
+        ),
+        AccountRefView::Lookup(account) => (format_lookup_account(account), None),
     };
-    if !push_page(
-        review,
-        &[
-            Field {
-                name: "Instruction",
-                value: instruction_title.as_str(),
-            },
-            Field {
-                name: "Program",
-                value: program.as_str(),
-            },
-        ],
-    ) {
-        return Ok(false);
-    }
-
-    let account_count = format!("{}", instruction.account_indexes.len());
-    let data_len = format!("{} bytes", instruction.data.len());
-    if !push_page(
-        review,
-        &[
-            Field {
-                name: "Ix accounts",
-                value: account_count.as_str(),
-            },
-            Field {
-                name: "Ix data",
-                value: data_len.as_str(),
-            },
-        ],
-    ) {
-        return Ok(false);
+    let program_label = decoded
+        .as_ref()
+        .map(|decoded| decoded.program_name)
+        .unwrap_or(program.as_str());
+    if let Some(decoded) = decoded.as_ref() {
+        let instruction_summary = format!("{program_label}: {}", decoded.instruction.name);
+        fields.push(OwnedField {
+            name: String::from("Ix"),
+            value: instruction_title,
+        });
+        fields.push(OwnedField {
+            name: String::from("Instruction"),
+            value: instruction_summary,
+        });
+        review_decoded_instruction(fields, &decoded.instruction);
+    } else {
+        let data_len = format!("{} bytes", instruction.data.len());
+        fields.push(OwnedField {
+            name: String::from("Ix"),
+            value: instruction_title,
+        });
+        fields.push(OwnedField {
+            name: String::from("Program"),
+            value: String::from(program_label),
+        });
+        fields.push(OwnedField {
+            name: String::from("Data"),
+            value: data_len,
+        });
     }
 
     for (position, account_index) in instruction.account_indexes.iter().enumerate() {
-        let label = format!("Account {}", position + 1);
+        let label = decoded
+            .as_ref()
+            .and_then(|decoded| decoded.instruction.account_names.get(position))
+            .cloned()
+            .unwrap_or_else(|| format!("Account {}", position + 1));
         let value = format_account_ref(
             view.account_ref(*account_index)
                 .map_err(|_| AppSW::InvalidData)?,
         );
-        if !push_page(
-            review,
-            &[Field {
-                name: label.as_str(),
-                value: value.as_str(),
-            }],
-        ) {
-            return Ok(false);
-        }
+        fields.push(OwnedField { name: label, value });
+    }
+
+    if decoded.is_some() {
+        return Ok(());
     }
 
     if instruction.data.is_empty() {
-        return Ok(push_page(
-            review,
-            &[Field {
-                name: "Data",
-                value: "empty",
-            }],
-        ));
+        fields.push(OwnedField {
+            name: String::from("Data"),
+            value: String::from("empty"),
+        });
+        return Ok(());
     }
 
     for (chunk_index, chunk) in instruction.data.chunks(IX_DATA_CHUNK_BYTES).enumerate() {
         let label = format!("Data {}", chunk_index + 1);
         let value = hex::encode(chunk);
-        if !push_page(
-            review,
-            &[Field {
-                name: label.as_str(),
-                value: value.as_str(),
-            }],
-        ) {
-            return Ok(false);
-        }
+        fields.push(OwnedField { name: label, value });
     }
 
-    Ok(true)
+    Ok(())
 }
 
-fn push_page(review: &NbglStreamingReview, fields: &[Field<'_>]) -> bool {
-    matches!(review.next(fields), NbglStreamingReviewStatus::Next)
+fn review_decoded_instruction(fields: &mut Vec<OwnedField>, instruction: &DecodedInstruction) {
+    if instruction.arguments.is_empty() {
+        fields.push(OwnedField {
+            name: String::from("Arguments"),
+            value: String::from("none"),
+        });
+        return;
+    }
+
+    for field in &instruction.arguments {
+        collect_decoded_field(fields, field.name.as_str(), &field.value);
+    }
+}
+
+fn collect_decoded_field(flattened: &mut Vec<OwnedField>, label: &str, value: &DecodedValue) {
+    match value {
+        DecodedValue::Number(number) => {
+            flattened.push(OwnedField {
+                name: String::from(label),
+                value: render_number(number),
+            });
+        }
+        DecodedValue::Boolean(value) => {
+            flattened.push(OwnedField {
+                name: String::from(label),
+                value: String::from(if *value { "true" } else { "false" }),
+            });
+        }
+        DecodedValue::PublicKey(value) => {
+            flattened.push(OwnedField {
+                name: String::from(label),
+                value: format_base58(value),
+            });
+        }
+        DecodedValue::Bytes(value) => {
+            flattened.push(OwnedField {
+                name: String::from(label),
+                value: hex::encode(value),
+            });
+        }
+        DecodedValue::String(value) => {
+            flattened.push(OwnedField {
+                name: String::from(label),
+                value: value.clone(),
+            });
+        }
+        DecodedValue::Option(value) => match value {
+            Some(value) => collect_decoded_field(flattened, label, value),
+            None => flattened.push(OwnedField {
+                name: String::from(label),
+                value: String::from("none"),
+            }),
+        },
+        DecodedValue::Array(values) => {
+            if values.is_empty() {
+                flattened.push(OwnedField {
+                    name: String::from(label),
+                    value: String::from("[]"),
+                });
+                return;
+            }
+
+            for (index, value) in values.iter().enumerate() {
+                let nested = format!("{}[{}]", label, index + 1);
+                collect_decoded_field(flattened, nested.as_str(), value);
+            }
+        }
+        DecodedValue::Struct(fields) => {
+            if fields.is_empty() {
+                flattened.push(OwnedField {
+                    name: String::from(label),
+                    value: String::from("{}"),
+                });
+                return;
+            }
+
+            for field in fields {
+                let nested = format!("{}.{}", label, field.name);
+                collect_decoded_field(flattened, nested.as_str(), &field.value);
+            }
+        }
+        DecodedValue::Enum(variant) => {
+            flattened.push(OwnedField {
+                name: String::from(label),
+                value: variant.name.clone(),
+            });
+
+            if let Some(fields) = &variant.value {
+                for DecodedField { name, value } in fields {
+                    let nested = format!("{}.{}", label, name);
+                    collect_decoded_field(flattened, nested.as_str(), value);
+                }
+            }
+        }
+    }
+}
+
+fn render_number(number: &DecodedNumber) -> String {
+    match number {
+        DecodedNumber::U8(value) => format!("{value}"),
+        DecodedNumber::U16(value) => format!("{value}"),
+        DecodedNumber::U32(value) => format!("{value}"),
+        DecodedNumber::U64(value) => format!("{value}"),
+        DecodedNumber::I64(value) => format!("{value}"),
+    }
 }
 
 fn format_account_ref(account: AccountRefView<'_>) -> String {

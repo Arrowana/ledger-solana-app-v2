@@ -190,7 +190,7 @@ fn command_timeout() -> Duration {
 }
 
 fn command_timeout_ms() -> i32 {
-    std::env::var("LEDGER_SQUADS_APDU_TIMEOUT_MS")
+    std::env::var("LEDGER_SOLANA_APDU_TIMEOUT_MS")
         .ok()
         .and_then(|value| value.parse::<u64>().ok())
         .filter(|value| *value > 0)

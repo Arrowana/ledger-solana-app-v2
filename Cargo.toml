@@ -1,5 +1,5 @@
 [workspace]
-members = ["cli", "ledger-app", "codama-parser", "solana-message-light"]
+members = ["cli", "ledger-app", "codama-parser", "solana-message-light", "app-integration-tests"]
 default-members = ["cli"]
 resolver = "2"
 

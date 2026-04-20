@@ -25,6 +25,7 @@ mod app_ui {
     pub mod menu;
     pub mod solana;
 }
+mod idls;
 mod settings;
 mod solana;
 
@@ -149,7 +150,7 @@ fn handle_sign_message<'a>(
     };
 
     let comm = command.into_comm();
-    if !review_message(&signer_pubkey, sign_payload.message)? {
+    if !review_message(comm, &signer_pubkey, sign_payload.message)? {
         sign_context.reset();
         return Err(AppSW::Deny);
     }

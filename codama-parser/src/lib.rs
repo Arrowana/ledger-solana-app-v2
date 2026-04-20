@@ -6,6 +6,7 @@ extern crate alloc;
 use alloc::boxed::Box;
 use alloc::format;
 use alloc::string::{String, ToString};
+use alloc::vec;
 use alloc::vec::Vec;
 use core::fmt;
 
@@ -24,12 +25,20 @@ pub enum ParseError {
     MissingDiscriminator {
         instruction: String,
     },
+    InvalidDiscriminatorType {
+        instruction: String,
+        kind: String,
+    },
     InvalidDiscriminatorEncoding {
         instruction: String,
         encoding: String,
     },
     InvalidDiscriminatorHex {
         instruction: String,
+    },
+    InvalidDiscriminatorNumber {
+        instruction: String,
+        value: String,
     },
     MissingDefinedType {
         context: String,
@@ -53,6 +62,10 @@ impl fmt::Display for ParseError {
                     "missing discriminator argument for instruction: {instruction}"
                 )
             }
+            Self::InvalidDiscriminatorType { instruction, kind } => write!(
+                f,
+                "unsupported discriminator type for instruction {instruction}: {kind}"
+            ),
             Self::InvalidDiscriminatorEncoding {
                 instruction,
                 encoding,
@@ -66,6 +79,10 @@ impl fmt::Display for ParseError {
                     "invalid discriminator hex for instruction: {instruction}"
                 )
             }
+            Self::InvalidDiscriminatorNumber { instruction, value } => write!(
+                f,
+                "invalid discriminator number for instruction {instruction}: {value}"
+            ),
             Self::MissingDefinedType { context, name } => {
                 write!(f, "missing defined type {name} referenced from {context}")
             }
@@ -261,6 +278,7 @@ impl ProgramSchema {
 pub struct InstructionSchema {
     pub name: String,
     pub selector: Vec<u8>,
+    pub accounts: Vec<InstructionAccountSchema>,
     pub arguments: Vec<ArgumentSchema>,
 }
 
@@ -274,6 +292,11 @@ pub struct ArgumentSchema {
 pub struct DefinedTypeSchema {
     pub name: String,
     pub ty: TypeNode,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InstructionAccountSchema {
+    pub name: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -296,6 +319,7 @@ impl InstructionSchemaBundle {
 pub struct DecodedInstruction {
     pub name: String,
     pub selector: Vec<u8>,
+    pub account_names: Vec<String>,
     pub arguments: Vec<DecodedField>,
 }
 
@@ -423,6 +447,9 @@ pub enum TypeNode {
         prefix: NumberType,
         fixed: bool,
     },
+    ZeroableOption {
+        item: Box<TypeNode>,
+    },
     Array {
         item: Box<TypeNode>,
         count: CountNode,
@@ -460,6 +487,7 @@ pub enum EnumVariant {
 pub enum CountNode {
     Fixed(u32),
     Prefixed(NumberType),
+    Remainder,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -633,6 +661,11 @@ fn decode_instruction_data_with_types(
     Ok(DecodedInstruction {
         name: instruction.name.clone(),
         selector: instruction.selector.clone(),
+        account_names: instruction
+            .accounts
+            .iter()
+            .map(|account| account.name.clone())
+            .collect(),
         arguments,
     })
 }
@@ -660,6 +693,11 @@ impl InstructionSchema {
             selector: selector.ok_or(ParseError::MissingDiscriminator {
                 instruction: raw.name,
             })?,
+            accounts: raw
+                .accounts
+                .into_iter()
+                .map(|account| InstructionAccountSchema { name: account.name })
+                .collect(),
             arguments,
         })
     }
@@ -710,6 +748,9 @@ impl TypeNode {
                 fixed,
                 item: Box::new(Self::from_raw(*item, context)?),
                 prefix: Self::parse_number_node(*prefix, context)?,
+            }),
+            RawTypeNode::ZeroableOptionTypeNode { item } => Ok(Self::ZeroableOption {
+                item: Box::new(Self::from_raw(*item, context)?),
             }),
             RawTypeNode::ArrayTypeNode { item, count } => Ok(Self::Array {
                 item: Box::new(Self::from_raw(*item, context)?),
@@ -786,6 +827,7 @@ impl CountNode {
             RawCountNode::PrefixedCountNode { prefix } => Ok(Self::Prefixed(
                 TypeNode::parse_number_node(*prefix, context)?,
             )),
+            RawCountNode::RemainderCountNode => Ok(Self::Remainder),
         }
     }
 }
@@ -795,6 +837,7 @@ fn collect_defined_type_names(ty: &TypeNode, pending: &mut Vec<String>) {
         TypeNode::FixedSize { item, .. }
         | TypeNode::SizePrefix { item, .. }
         | TypeNode::Option { item, .. }
+        | TypeNode::ZeroableOption { item }
         | TypeNode::Array { item, .. } => collect_defined_type_names(item, pending),
         TypeNode::Struct { fields } => {
             for field in fields {
@@ -820,6 +863,42 @@ fn collect_defined_type_names(ty: &TypeNode, pending: &mut Vec<String>) {
         | TypeNode::PublicKey
         | TypeNode::Bytes
         | TypeNode::String { .. } => {}
+    }
+}
+
+fn fixed_size_of_type(defined_types: &[DefinedTypeSchema], ty: &TypeNode) -> Option<usize> {
+    match ty {
+        TypeNode::Number(number) => Some(number_width(*number)),
+        TypeNode::Boolean { size } => Some(number_width(*size)),
+        TypeNode::PublicKey => Some(32),
+        TypeNode::FixedSize { size, item } => {
+            fixed_size_of_type(defined_types, item)?.checked_mul(*size as usize)
+        }
+        TypeNode::Array {
+            item,
+            count: CountNode::Fixed(count),
+        } => fixed_size_of_type(defined_types, item)?.checked_mul(*count as usize),
+        TypeNode::Struct { fields } => {
+            let mut total = 0usize;
+            for field in fields {
+                total = total.checked_add(fixed_size_of_type(defined_types, &field.ty)?)?;
+            }
+            Some(total)
+        }
+        TypeNode::Defined(name) => {
+            let defined = defined_types.iter().find(|defined| defined.name == *name)?;
+            fixed_size_of_type(defined_types, &defined.ty)
+        }
+        _ => None,
+    }
+}
+
+fn number_width(number: NumberType) -> usize {
+    match number.format {
+        NumberFormat::U8 => 1,
+        NumberFormat::U16 => 2,
+        NumberFormat::U32 => 4,
+        NumberFormat::U64 | NumberFormat::I64 => 8,
     }
 }
 
@@ -854,6 +933,19 @@ impl<'a> Decoder<'a> {
         let start = self.offset;
         self.offset += len;
         Ok(&self.data[start..self.offset])
+    }
+
+    fn peek_bytes(&self, len: usize, context: &str) -> DecodeResult<&'a [u8]> {
+        let remaining = self.remaining();
+        if remaining < len {
+            return Err(DecodeError::UnexpectedEof {
+                context: context.to_string(),
+                needed: len,
+                remaining,
+            });
+        }
+
+        Ok(&self.data[self.offset..self.offset + len])
     }
 
     fn decode_type(
@@ -907,7 +999,25 @@ impl<'a> Decoder<'a> {
                 let bytes = self.take_bytes(len, context)?;
                 Self::decode_sized_value(defined_types, item, bytes, context)
             }
-            TypeNode::Option { item, prefix, .. } => {
+            TypeNode::Option {
+                item,
+                prefix,
+                fixed,
+            } => {
+                if *fixed {
+                    let size = fixed_size_of_type(defined_types, item).ok_or(
+                        DecodeError::UnsupportedUnboundedType {
+                            context: format!("{context} (fixed option)"),
+                            kind: "fixed option item",
+                        },
+                    )?;
+                    let bytes = self.peek_bytes(size, context)?;
+                    if bytes.iter().all(|byte| *byte == 0) {
+                        let _ = self.take_bytes(size, context)?;
+                        return Ok(DecodedValue::Option(None));
+                    }
+                }
+
                 let tag = self.decode_u64(*prefix, context)?;
                 match tag {
                     0 => Ok(DecodedValue::Option(None)),
@@ -922,15 +1032,40 @@ impl<'a> Decoder<'a> {
                     }),
                 }
             }
+            TypeNode::ZeroableOption { item } => {
+                let size = fixed_size_of_type(defined_types, item).ok_or(
+                    DecodeError::UnsupportedUnboundedType {
+                        context: format!("{context} (zeroable option)"),
+                        kind: "zeroable option item",
+                    },
+                )?;
+                let bytes = self.peek_bytes(size, context)?;
+                if bytes.iter().all(|byte| *byte == 0) {
+                    let _ = self.take_bytes(size, context)?;
+                    Ok(DecodedValue::Option(None))
+                } else {
+                    Ok(DecodedValue::Option(Some(Box::new(self.decode_type(
+                        defined_types,
+                        item,
+                        context,
+                    )?))))
+                }
+            }
             TypeNode::Array { item, count } => {
-                let len = match count {
-                    CountNode::Fixed(value) => *value as usize,
-                    CountNode::Prefixed(prefix) => self.decode_usize(*prefix, context)?,
+                let fixed_len = match count {
+                    CountNode::Fixed(value) => Some(*value as usize),
+                    CountNode::Prefixed(prefix) => Some(self.decode_usize(*prefix, context)?),
+                    CountNode::Remainder => None,
                 };
-                let mut values = Vec::with_capacity(len);
-                for index in 0..len {
+                let mut values = Vec::with_capacity(fixed_len.unwrap_or(0));
+                let mut index = 0usize;
+                while fixed_len
+                    .map(|len| index < len)
+                    .unwrap_or(!self.is_finished())
+                {
                     let item_context = format!("{context}[{index}]");
                     values.push(self.decode_type(defined_types, item, &item_context)?);
+                    index += 1;
                 }
                 Ok(DecodedValue::Array(values))
             }
@@ -1150,6 +1285,8 @@ struct RawProgramNode {
 #[derive(Debug, Deserialize)]
 struct RawInstructionNode {
     name: String,
+    #[serde(default)]
+    accounts: Vec<RawInstructionAccountNode>,
     arguments: Vec<RawInstructionArgumentNode>,
 }
 
@@ -1157,6 +1294,11 @@ struct RawInstructionNode {
 struct RawInstructionSelectorNode {
     name: String,
     arguments: Vec<RawInstructionSelectorArgumentNode>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawInstructionAccountNode {
+    name: String,
 }
 
 impl RawInstructionSelectorNode {
@@ -1193,24 +1335,27 @@ struct RawInstructionSelectorArgumentNode {
     name: String,
     #[serde(default)]
     default_value_strategy: Option<String>,
+    #[serde(rename = "type")]
+    ty: RawTypeNode,
     #[serde(default)]
     default_value: Option<RawValueNode>,
 }
 
 impl RawInstructionArgumentNode {
     fn selector_bytes(self, instruction_name: &str) -> Result<Vec<u8>> {
-        selector_bytes_from_value(self.default_value, instruction_name)
+        selector_bytes_from_value(self.default_value, &self.ty, instruction_name)
     }
 }
 
 impl RawInstructionSelectorArgumentNode {
     fn selector_bytes(self, instruction_name: &str) -> Result<Vec<u8>> {
-        selector_bytes_from_value(self.default_value, instruction_name)
+        selector_bytes_from_value(self.default_value, &self.ty, instruction_name)
     }
 }
 
 fn selector_bytes_from_value(
     default_value: Option<RawValueNode>,
+    discriminator_type: &RawTypeNode,
     instruction_name: &str,
 ) -> Result<Vec<u8>> {
     let value = default_value.ok_or_else(|| ParseError::MissingDiscriminator {
@@ -1229,7 +1374,117 @@ fn selector_bytes_from_value(
                 instruction: instruction_name.to_string(),
             })
         }
+        RawValueNode::NumberValueNode { number } => {
+            encode_number_selector(number, discriminator_type, instruction_name)
+        }
     }
+}
+
+fn encode_number_selector(
+    number: serde_json::Number,
+    discriminator_type: &RawTypeNode,
+    instruction_name: &str,
+) -> Result<Vec<u8>> {
+    let RawTypeNode::NumberTypeNode(number_type) = discriminator_type else {
+        return Err(ParseError::InvalidDiscriminatorType {
+            instruction: instruction_name.to_string(),
+            kind: discriminator_type.kind_name().to_string(),
+        });
+    };
+
+    let endian = number_type.endian.as_deref().unwrap_or("le");
+    let use_big_endian = match endian {
+        "le" => false,
+        "be" => true,
+        other => {
+            return Err(ParseError::UnsupportedTypeNode {
+                context: instruction_name.to_string(),
+                kind: format!("number endian {other}"),
+            });
+        }
+    };
+
+    match number_type.format.as_str() {
+        "u8" => encode_unsigned_selector::<1>(number, instruction_name, use_big_endian),
+        "u16" => encode_unsigned_selector::<2>(number, instruction_name, use_big_endian),
+        "u32" => encode_unsigned_selector::<4>(number, instruction_name, use_big_endian),
+        "u64" => encode_unsigned_selector::<8>(number, instruction_name, use_big_endian),
+        "i64" => {
+            let value = number
+                .as_i64()
+                .ok_or_else(|| ParseError::InvalidDiscriminatorNumber {
+                    instruction: instruction_name.to_string(),
+                    value: number.to_string(),
+                })?;
+            Ok(if use_big_endian {
+                value.to_be_bytes().to_vec()
+            } else {
+                value.to_le_bytes().to_vec()
+            })
+        }
+        other => Err(ParseError::UnsupportedTypeNode {
+            context: instruction_name.to_string(),
+            kind: format!("number format {other}"),
+        }),
+    }
+}
+
+fn encode_unsigned_selector<const N: usize>(
+    number: serde_json::Number,
+    instruction_name: &str,
+    use_big_endian: bool,
+) -> Result<Vec<u8>> {
+    let value = number
+        .as_u64()
+        .ok_or_else(|| ParseError::InvalidDiscriminatorNumber {
+            instruction: instruction_name.to_string(),
+            value: number.to_string(),
+        })?;
+
+    let bytes = match N {
+        1 => {
+            let value =
+                u8::try_from(value).map_err(|_| ParseError::InvalidDiscriminatorNumber {
+                    instruction: instruction_name.to_string(),
+                    value: number.to_string(),
+                })?;
+            vec![value]
+        }
+        2 => {
+            let value =
+                u16::try_from(value).map_err(|_| ParseError::InvalidDiscriminatorNumber {
+                    instruction: instruction_name.to_string(),
+                    value: number.to_string(),
+                })?;
+            if use_big_endian {
+                value.to_be_bytes().to_vec()
+            } else {
+                value.to_le_bytes().to_vec()
+            }
+        }
+        4 => {
+            let value =
+                u32::try_from(value).map_err(|_| ParseError::InvalidDiscriminatorNumber {
+                    instruction: instruction_name.to_string(),
+                    value: number.to_string(),
+                })?;
+            if use_big_endian {
+                value.to_be_bytes().to_vec()
+            } else {
+                value.to_le_bytes().to_vec()
+            }
+        }
+        8 => {
+            if use_big_endian {
+                value.to_be_bytes().to_vec()
+            } else {
+                value.to_le_bytes().to_vec()
+            }
+        }
+        _ => unreachable!(),
+    };
+
+    Ok(bytes)
 }
 
 #[derive(Debug, Deserialize)]
@@ -1249,6 +1504,8 @@ struct RawDefinedTypeNameNode {
 enum RawValueNode {
     #[serde(rename = "bytesValueNode")]
     BytesValueNode { encoding: String, data: String },
+    #[serde(rename = "numberValueNode")]
+    NumberValueNode { number: serde_json::Number },
 }
 
 #[derive(Debug, Deserialize)]
@@ -1283,6 +1540,8 @@ enum RawTypeNode {
         item: Box<RawTypeNode>,
         prefix: Box<RawTypeNode>,
     },
+    #[serde(rename = "zeroableOptionTypeNode")]
+    ZeroableOptionTypeNode { item: Box<RawTypeNode> },
     #[serde(rename = "arrayTypeNode")]
     ArrayTypeNode {
         item: Box<RawTypeNode>,
@@ -1310,6 +1569,7 @@ impl RawTypeNode {
             Self::FixedSizeTypeNode { .. } => "fixedSizeTypeNode",
             Self::SizePrefixTypeNode { .. } => "sizePrefixTypeNode",
             Self::OptionTypeNode { .. } => "optionTypeNode",
+            Self::ZeroableOptionTypeNode { .. } => "zeroableOptionTypeNode",
             Self::ArrayTypeNode { .. } => "arrayTypeNode",
             Self::StructTypeNode { .. } => "structTypeNode",
             Self::EnumTypeNode { .. } => "enumTypeNode",
@@ -1332,6 +1592,8 @@ enum RawCountNode {
     FixedCountNode { value: u32 },
     #[serde(rename = "prefixedCountNode")]
     PrefixedCountNode { prefix: Box<RawTypeNode> },
+    #[serde(rename = "remainderCountNode")]
+    RemainderCountNode,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1396,71 +1658,71 @@ mod tests {
     use super::*;
     use alloc::vec;
 
-    const SQUADS_IDL: &[u8] = include_bytes!(concat!(
+    const SAMPLE_IDL: &[u8] = include_bytes!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../squads-v4.codama.json"
+        "/../testdata/sample-program.codama.json"
     ));
-    const SQUADS_PRUNED_IDL: &[u8] = include_bytes!(concat!(
+    const SAMPLE_PRUNED_IDL: &[u8] = include_bytes!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../squads-v4.pruned.codama.json"
+        "/../testdata/sample-program.pruned.codama.json"
+    ));
+    const SYSTEM_IDL: &[u8] = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../idls/system.codama.json"
+    ));
+    const COMPUTE_BUDGET_IDL: &[u8] = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../idls/compute-budget.codama.json"
+    ));
+    const ASSOCIATED_TOKEN_ACCOUNT_IDL: &[u8] = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../idls/associated-token-account.codama.json"
+    ));
+    const TOKEN_IDL: &[u8] = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../idls/token.codama.json"
     ));
 
     #[test]
-    fn parses_squads_program_metadata() {
-        let program = parse_program_schema(SQUADS_IDL).unwrap();
-        assert_eq!(program.name, "squadsMultisigProgram");
-        assert_eq!(program.version, "2.0.0");
-        assert_eq!(program.origin.as_deref(), Some("anchor"));
-        assert_eq!(program.instructions.len(), 31);
-        assert_eq!(program.defined_types.len(), 14);
+    fn parses_sample_program_metadata() {
+        let program = parse_program_schema(SAMPLE_IDL).unwrap();
+        assert_eq!(program.name, "sampleOperations");
+        assert_eq!(program.version, "1.0.0");
+        assert_eq!(program.origin.as_deref(), Some("test"));
+        assert_eq!(program.instructions.len(), 3);
+        assert_eq!(program.defined_types.len(), 2);
     }
 
     #[test]
-    fn parses_pruned_squads_program_metadata() {
-        let program = parse_program_schema(SQUADS_PRUNED_IDL).unwrap();
-        assert_eq!(program.name, "squadsMultisigProgram");
-        assert_eq!(program.version, "2.0.0");
-        assert_eq!(program.origin.as_deref(), Some("anchor"));
-        assert_eq!(program.instructions.len(), 31);
-        assert_eq!(program.defined_types.len(), 5);
-        assert_eq!(
-            program
-                .defined_types
-                .iter()
-                .map(|defined_type| defined_type.name.as_str())
-                .collect::<Vec<_>>(),
-            vec![
-                "proposalVoteArgs",
-                "member",
-                "permissions",
-                "configAction",
-                "period",
-            ]
-        );
+    fn parses_pruned_sample_program_metadata() {
+        let program = parse_program_schema(SAMPLE_PRUNED_IDL).unwrap();
+        assert_eq!(program.name, "sampleOperations");
+        assert_eq!(program.version, "1.0.0");
+        assert_eq!(program.origin.as_deref(), Some("test"));
+        assert_eq!(program.instructions.len(), 1);
+        assert!(program.defined_types.is_empty());
     }
 
     #[test]
     fn extracts_instruction_selector_and_omits_discriminator_arg() {
-        let program = parse_program_schema(SQUADS_IDL).unwrap();
-        let instruction = program.instruction_by_name("proposalApprove").unwrap();
+        let program = parse_program_schema(SAMPLE_IDL).unwrap();
+        let instruction = program.instruction_by_name("approveAction").unwrap();
         assert_eq!(
             instruction.selector,
-            decode_hex("9025a488bcd82af8").unwrap()
+            decode_hex("0102030405060708").unwrap()
         );
         assert_eq!(instruction.arguments.len(), 1);
         assert_eq!(instruction.arguments[0].name, "args");
         assert_eq!(
             instruction.arguments[0].ty,
-            TypeNode::Defined("proposalVoteArgs".to_string())
+            TypeNode::Defined("approvalArgs".to_string())
         );
     }
 
     #[test]
     fn parses_nested_instruction_arguments() {
-        let program = parse_program_schema(SQUADS_IDL).unwrap();
-        let instruction = program
-            .instruction_by_name("vaultTransactionCreate")
-            .unwrap();
+        let program = parse_program_schema(SAMPLE_IDL).unwrap();
+        let instruction = program.instruction_by_name("submitPayload").unwrap();
         assert_eq!(instruction.arguments.len(), 4);
 
         assert_eq!(
@@ -1482,14 +1744,14 @@ mod tests {
                     }
                 );
             }
-            other => panic!("unexpected transactionMessage type: {other:?}"),
+            other => panic!("unexpected payload type: {other:?}"),
         }
     }
 
     #[test]
     fn parses_defined_enum_types() {
-        let program = parse_program_schema(SQUADS_IDL).unwrap();
-        let ty = program.defined_type("proposalStatus").unwrap();
+        let program = parse_program_schema(SAMPLE_IDL).unwrap();
+        let ty = program.defined_type("reviewState").unwrap();
 
         match &ty.ty {
             TypeNode::Enum { variants, size } => {
@@ -1509,22 +1771,22 @@ mod tests {
                     } if name == "executing" && discriminator.is_none()
                 ));
             }
-            other => panic!("unexpected proposalStatus type: {other:?}"),
+            other => panic!("unexpected reviewState type: {other:?}"),
         }
     }
 
     #[test]
     fn parses_boolean_arguments() {
-        let program = parse_program_schema(SQUADS_IDL).unwrap();
-        let instruction = program.instruction_by_name("proposalCreate").unwrap();
-        let draft = instruction
+        let program = parse_program_schema(SAMPLE_IDL).unwrap();
+        let instruction = program.instruction_by_name("reviewRequest").unwrap();
+        let urgent = instruction
             .arguments
             .iter()
-            .find(|arg| arg.name == "draft")
+            .find(|arg| arg.name == "urgent")
             .unwrap();
 
         assert_eq!(
-            draft.ty,
+            urgent.ty,
             TypeNode::Boolean {
                 size: NumberType {
                     format: NumberFormat::U8,
@@ -1535,15 +1797,15 @@ mod tests {
     }
 
     #[test]
-    fn lazily_loads_and_decodes_proposal_create_instruction_data() {
-        let program = parse_program_index(SQUADS_IDL).unwrap();
-        let selector = decode_hex("dc3c49e01e6c4f9f").unwrap();
+    fn lazily_loads_and_decodes_review_request_instruction_data() {
+        let program = parse_program_index(SAMPLE_IDL).unwrap();
+        let selector = decode_hex("2122232425262728").unwrap();
         let bundle = program
             .load_instruction_schema_by_selector(&selector)
             .unwrap()
             .unwrap();
 
-        assert_eq!(bundle.instruction.name, "proposalCreate");
+        assert_eq!(bundle.instruction.name, "reviewRequest");
         assert!(bundle.defined_types.is_empty());
 
         let mut data = selector.clone();
@@ -1555,15 +1817,16 @@ mod tests {
         assert_eq!(
             decoded,
             DecodedInstruction {
-                name: "proposalCreate".to_string(),
+                name: "reviewRequest".to_string(),
                 selector,
+                account_names: vec![],
                 arguments: vec![
                     DecodedField {
-                        name: "transactionIndex".to_string(),
+                        name: "requestIndex".to_string(),
                         value: DecodedValue::Number(DecodedNumber::U64(42)),
                     },
                     DecodedField {
-                        name: "draft".to_string(),
+                        name: "urgent".to_string(),
                         value: DecodedValue::Boolean(true),
                     },
                 ],
@@ -1572,9 +1835,9 @@ mod tests {
     }
 
     #[test]
-    fn pruned_idl_decodes_proposal_create_instruction_data() {
-        let program = parse_program_index(SQUADS_PRUNED_IDL).unwrap();
-        let selector = decode_hex("dc3c49e01e6c4f9f").unwrap();
+    fn pruned_idl_decodes_review_request_instruction_data() {
+        let program = parse_program_index(SAMPLE_PRUNED_IDL).unwrap();
+        let selector = decode_hex("2122232425262728").unwrap();
 
         let mut data = selector.clone();
         data.extend_from_slice(&42u64.to_le_bytes());
@@ -1585,18 +1848,144 @@ mod tests {
         assert_eq!(
             decoded,
             DecodedInstruction {
-                name: "proposalCreate".to_string(),
+                name: "reviewRequest".to_string(),
                 selector,
+                account_names: vec![],
                 arguments: vec![
                     DecodedField {
-                        name: "transactionIndex".to_string(),
+                        name: "requestIndex".to_string(),
                         value: DecodedValue::Number(DecodedNumber::U64(42)),
                     },
                     DecodedField {
-                        name: "draft".to_string(),
+                        name: "urgent".to_string(),
                         value: DecodedValue::Boolean(true),
                     },
                 ],
+            }
+        );
+    }
+
+    #[test]
+    fn bundled_idls_parse_expected_program_metadata() {
+        let system = parse_program_schema(SYSTEM_IDL).unwrap();
+        assert_eq!(system.name, "system");
+        assert_eq!(system.public_key, "11111111111111111111111111111111");
+
+        let compute_budget = parse_program_schema(COMPUTE_BUDGET_IDL).unwrap();
+        assert_eq!(compute_budget.name, "computeBudget");
+        assert_eq!(
+            compute_budget.public_key,
+            "ComputeBudget111111111111111111111111111111"
+        );
+
+        let associated_token_account = parse_program_schema(ASSOCIATED_TOKEN_ACCOUNT_IDL).unwrap();
+        assert_eq!(
+            associated_token_account.name,
+            "pinocchioAssociatedTokenAccountInterface"
+        );
+        assert_eq!(
+            associated_token_account.public_key,
+            "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        );
+
+        let token = parse_program_schema(TOKEN_IDL).unwrap();
+        assert_eq!(token.name, "token");
+        assert_eq!(
+            token.public_key,
+            "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        );
+    }
+
+    #[test]
+    fn bundled_system_idl_decodes_transfer_sol() {
+        let program = parse_program_index(SYSTEM_IDL).unwrap();
+        let mut data = 2u32.to_le_bytes().to_vec();
+        data.extend_from_slice(&5_000u64.to_le_bytes());
+
+        let decoded = program.decode_instruction_data(&data).unwrap();
+
+        assert_eq!(
+            decoded,
+            DecodedInstruction {
+                name: "transferSol".to_string(),
+                selector: 2u32.to_le_bytes().to_vec(),
+                account_names: vec!["source".to_string(), "destination".to_string()],
+                arguments: vec![DecodedField {
+                    name: "amount".to_string(),
+                    value: DecodedValue::Number(DecodedNumber::U64(5_000)),
+                }],
+            }
+        );
+    }
+
+    #[test]
+    fn bundled_compute_budget_idl_decodes_set_compute_unit_limit() {
+        let program = parse_program_index(COMPUTE_BUDGET_IDL).unwrap();
+        let mut data = vec![2];
+        data.extend_from_slice(&1_400_000u32.to_le_bytes());
+
+        let decoded = program.decode_instruction_data(&data).unwrap();
+
+        assert_eq!(
+            decoded,
+            DecodedInstruction {
+                name: "setComputeUnitLimit".to_string(),
+                selector: vec![2],
+                account_names: vec![],
+                arguments: vec![DecodedField {
+                    name: "units".to_string(),
+                    value: DecodedValue::Number(DecodedNumber::U32(1_400_000)),
+                }],
+            }
+        );
+    }
+
+    #[test]
+    fn bundled_associated_token_account_idl_decodes_create() {
+        let program = parse_program_index(ASSOCIATED_TOKEN_ACCOUNT_IDL).unwrap();
+        let decoded = program.decode_instruction_data(&[0]).unwrap();
+
+        assert_eq!(
+            decoded,
+            DecodedInstruction {
+                name: "create".to_string(),
+                selector: vec![0],
+                account_names: vec![
+                    "funder".to_string(),
+                    "associatedTokenAccount".to_string(),
+                    "wallet".to_string(),
+                    "mint".to_string(),
+                    "systemProgram".to_string(),
+                    "tokenProgram".to_string(),
+                    "rentSysvar".to_string(),
+                ],
+                arguments: vec![],
+            }
+        );
+    }
+
+    #[test]
+    fn bundled_token_idl_decodes_transfer() {
+        let program = parse_program_index(TOKEN_IDL).unwrap();
+        let mut data = vec![3];
+        data.extend_from_slice(&42u64.to_le_bytes());
+
+        let decoded = program.decode_instruction_data(&data).unwrap();
+
+        assert_eq!(
+            decoded,
+            DecodedInstruction {
+                name: "transfer".to_string(),
+                selector: vec![3],
+                account_names: vec![
+                    "source".to_string(),
+                    "destination".to_string(),
+                    "authority".to_string(),
+                ],
+                arguments: vec![DecodedField {
+                    name: "amount".to_string(),
+                    value: DecodedValue::Number(DecodedNumber::U64(42)),
+                }],
             }
         );
     }
