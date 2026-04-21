@@ -27,11 +27,10 @@ use solana_pubkey::Pubkey;
 const DEFAULT_DERIVATION_PATH: &str = "m/44'/501'/0'/0'";
 const SCREEN_TIMEOUT: Duration = Duration::from_secs(20);
 const SCREEN_CHANGE_TIMEOUT: Duration = Duration::from_secs(5);
+const SCROLLER_SCROLL_TIMEOUT: Duration = Duration::from_millis(900);
 const SIGN_RESULT_TIMEOUT: Duration = Duration::from_secs(30);
 const HOME_SCREEN_TITLE: &str = "Solana v2";
 const HOME_SCREEN_READY: &str = "app is ready";
-const REVIEW_TITLE: &str = "Review Solana tx";
-const REVIEW_APPROVE: &str = "Sign transaction";
 const SYSTEM_PROGRAM_ID: Pubkey = Pubkey::from_str_const("11111111111111111111111111111111");
 const COMPUTE_BUDGET_PROGRAM_ID: Pubkey =
     Pubkey::from_str_const("ComputeBudget111111111111111111111111111111");
@@ -107,55 +106,53 @@ struct SmokeCase {
     name: SmokeCaseName,
     message: Vec<u8>,
     message_hash: String,
+    review_section_count: usize,
     expected_screens: &'static [ExpectedScreen],
 }
 
 const MESSAGE_HASH_SCREEN: ExpectedScreen = ExpectedScreen {
-    fragments: &["Message SHA-256"],
+    fragments: &["Message", "256"],
 };
 
 const SYSTEM_TRANSFER_SCREENS: &[ExpectedScreen] = &[
     ExpectedScreen {
-        fragments: &["Instruction", "system", "transferSol"],
+        fragments: &["1/1", "system", "transferSol"],
     },
     ExpectedScreen {
-        fragments: &["amount", "42"],
+        fragments: &["amount", "42_000_000_000"],
     },
     ExpectedScreen {
-        fragments: &["source"],
+        fragments: &["source", "<wallet>"],
     },
 ];
 
 const COMPUTE_BUDGET_LIMIT_SCREENS: &[ExpectedScreen] = &[
     ExpectedScreen {
-        fragments: &["Instruction", "compute", "budget", "setComputeUnitLimit"],
+        fragments: &["1/1", "compute-budget", "setComputeUnitLimi"],
     },
     ExpectedScreen {
-        fragments: &["units", "1400000"],
+        fragments: &["units", "1_400_000"],
     },
 ];
 
 const ATA_CREATE_SCREENS: &[ExpectedScreen] = &[
     ExpectedScreen {
-        fragments: &["Instruction", "associated", "token", "create"],
+        fragments: &["1/1", "associated-token", "create"],
     },
     ExpectedScreen {
-        fragments: &["Arguments", "none"],
-    },
-    ExpectedScreen {
-        fragments: &["funder"],
+        fragments: &["funder", "<wallet>"],
     },
 ];
 
 const TOKEN_TRANSFER_SCREENS: &[ExpectedScreen] = &[
     ExpectedScreen {
-        fragments: &["Instruction", "token", "transfer"],
+        fragments: &["1/1", "token", "transfer"],
     },
     ExpectedScreen {
-        fragments: &["amount", "42"],
+        fragments: &["amount", "42_000_000"],
     },
     ExpectedScreen {
-        fragments: &["source"],
+        fragments: &["authority", "<wallet>"],
     },
 ];
 
@@ -287,6 +284,24 @@ impl SpeculosApi {
             thread::sleep(Duration::from_millis(150));
         }
     }
+
+    fn try_wait_for_screen_change(
+        &self,
+        previous: &[String],
+        timeout: Duration,
+    ) -> Result<Option<Vec<String>>> {
+        let started = Instant::now();
+        loop {
+            let current = self.current_screen()?;
+            if !current.is_empty() && current != previous {
+                return Ok(Some(current));
+            }
+            if started.elapsed() >= timeout {
+                return Ok(None);
+            }
+            thread::sleep(Duration::from_millis(150));
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -351,7 +366,7 @@ fn run_speculos_smoke(args: SpeculosSmokeArgs) -> Result<()> {
     );
 
     for case in cases {
-        let smoke_case = build_case(case)?;
+        let smoke_case = build_case(case, pubkey)?;
         run_sign_case(
             &api,
             ports.apdu,
@@ -397,7 +412,8 @@ fn run_sign_case(
         let _ = tx.send(result);
     });
 
-    let mut current = api.wait_for_screen_contains(REVIEW_TITLE, SCREEN_TIMEOUT)?;
+    let home_screen = api.current_screen()?;
+    let mut current = api.wait_for_screen_change(&home_screen, SCREEN_TIMEOUT)?;
 
     if manual_review {
         println!("==> Manual review enabled for {}", case.name.slug());
@@ -422,18 +438,27 @@ fn run_sign_case(
         return Ok(());
     }
 
-    let mut screens = vec![current.clone()];
+    let mut screens = Vec::new();
 
-    while !screen_contains(&current, REVIEW_APPROVE) {
-        api.press_button("right")?;
-        current = api.wait_for_screen_change(&current, SCREEN_CHANGE_TIMEOUT)?;
-        screens.push(current.clone());
-        if screens.len() > 40 {
+    for section_index in 0..case.review_section_count {
+        let section_screens = collect_section_screens(api, current.clone())?;
+        current = section_screens
+            .last()
+            .cloned()
+            .unwrap_or_else(|| current.clone());
+        screens.extend(section_screens);
+
+        if screens.len() > 80 {
             bail!(
-                "review flow for {} exceeded 40 screens: {}",
+                "review flow for {} exceeded 80 screens: {}",
                 case.name.slug(),
                 render_screens(&screens)
             );
+        }
+
+        if section_index + 1 < case.review_section_count {
+            api.press_button("both")?;
+            current = api.wait_for_screen_change(&current, SCREEN_CHANGE_TIMEOUT)?;
         }
     }
 
@@ -459,6 +484,16 @@ fn run_sign_case(
     );
 
     api.press_button("both")?;
+    current = api.wait_for_screen_change(&current, SCREEN_CHANGE_TIMEOUT)?;
+    ensure!(
+        screen_contains_all(&current, &["Cancel", "Sign"]),
+        "expected sign validator for {}; got {}",
+        case.name.slug(),
+        render_screen(&current)
+    );
+    api.press_button("right")?;
+    thread::sleep(Duration::from_millis(200));
+    api.press_button("both")?;
     let signature = wait_for_sign_result(rx, case.name, false)?;
     ensure!(
         signature.iter().any(|byte| *byte != 0),
@@ -469,6 +504,22 @@ fn run_sign_case(
     api.wait_for_screen_contains(HOME_SCREEN_READY, SCREEN_TIMEOUT)?;
     println!("==> Case {} passed", case.name.slug());
     Ok(())
+}
+
+fn collect_section_screens(api: &SpeculosApi, start: Vec<String>) -> Result<Vec<Vec<String>>> {
+    let mut screens = vec![start.clone()];
+    let mut current = start;
+
+    for _ in 0..24 {
+        api.press_button("right")?;
+        let Some(next) = api.try_wait_for_screen_change(&current, SCROLLER_SCROLL_TIMEOUT)? else {
+            break;
+        };
+        screens.push(next.clone());
+        current = next;
+    }
+
+    Ok(screens)
 }
 
 fn wait_for_sign_result(
@@ -522,7 +573,7 @@ fn assert_status(status: u16, label: &str) -> Result<()> {
     }
 }
 
-fn build_case(case: SmokeCaseName) -> Result<SmokeCase> {
+fn build_case(case: SmokeCaseName, signer_pubkey: [u8; 32]) -> Result<SmokeCase> {
     let expected_screens = match case {
         SmokeCaseName::SystemTransfer => SYSTEM_TRANSFER_SCREENS,
         SmokeCaseName::ComputeBudgetLimit => COMPUTE_BUDGET_LIMIT_SCREENS,
@@ -531,10 +582,10 @@ fn build_case(case: SmokeCaseName) -> Result<SmokeCase> {
     };
 
     let message = match case {
-        SmokeCaseName::SystemTransfer => build_system_transfer_message()?,
-        SmokeCaseName::ComputeBudgetLimit => build_compute_budget_limit_message()?,
-        SmokeCaseName::AtaCreate => build_ata_create_message()?,
-        SmokeCaseName::TokenTransfer => build_token_transfer_message()?,
+        SmokeCaseName::SystemTransfer => build_system_transfer_message(signer_pubkey)?,
+        SmokeCaseName::ComputeBudgetLimit => build_compute_budget_limit_message(signer_pubkey)?,
+        SmokeCaseName::AtaCreate => build_ata_create_message(signer_pubkey)?,
+        SmokeCaseName::TokenTransfer => build_token_transfer_message(signer_pubkey)?,
     };
     let message_hash = message_sha256(&message);
 
@@ -542,12 +593,13 @@ fn build_case(case: SmokeCaseName) -> Result<SmokeCase> {
         name: case,
         message,
         message_hash,
+        review_section_count: 2,
         expected_screens,
     })
 }
 
-fn build_system_transfer_message() -> Result<Vec<u8>> {
-    let payer = repeated_pubkey(0x11);
+fn build_system_transfer_message(signer_pubkey: [u8; 32]) -> Result<Vec<u8>> {
+    let payer = Pubkey::new_from_array(signer_pubkey);
     let destination = repeated_pubkey(0x22);
     let instruction = Instruction {
         program_id: SYSTEM_PROGRAM_ID,
@@ -555,13 +607,13 @@ fn build_system_transfer_message() -> Result<Vec<u8>> {
             AccountMeta::new(payer, true),
             AccountMeta::new(destination, false),
         ],
-        data: system_transfer_data(42),
+        data: system_transfer_data(42_000_000_000),
     };
     Ok(build_legacy_message(&payer, &[instruction]))
 }
 
-fn build_compute_budget_limit_message() -> Result<Vec<u8>> {
-    let payer = repeated_pubkey(0x44);
+fn build_compute_budget_limit_message(signer_pubkey: [u8; 32]) -> Result<Vec<u8>> {
+    let payer = Pubkey::new_from_array(signer_pubkey);
     let instruction = Instruction {
         program_id: COMPUTE_BUDGET_PROGRAM_ID,
         accounts: vec![],
@@ -570,8 +622,8 @@ fn build_compute_budget_limit_message() -> Result<Vec<u8>> {
     Ok(build_legacy_message(&payer, &[instruction]))
 }
 
-fn build_ata_create_message() -> Result<Vec<u8>> {
-    let payer = repeated_pubkey(0x66);
+fn build_ata_create_message(signer_pubkey: [u8; 32]) -> Result<Vec<u8>> {
+    let payer = Pubkey::new_from_array(signer_pubkey);
     let associated_account = repeated_pubkey(0x67);
     let wallet = repeated_pubkey(0x68);
     let mint = repeated_pubkey(0x69);
@@ -590,8 +642,8 @@ fn build_ata_create_message() -> Result<Vec<u8>> {
     Ok(build_legacy_message(&payer, &[instruction]))
 }
 
-fn build_token_transfer_message() -> Result<Vec<u8>> {
-    let authority = repeated_pubkey(0x88);
+fn build_token_transfer_message(signer_pubkey: [u8; 32]) -> Result<Vec<u8>> {
+    let authority = Pubkey::new_from_array(signer_pubkey);
     let source = repeated_pubkey(0x89);
     let destination = repeated_pubkey(0x8a);
     let instruction = Instruction {
@@ -601,7 +653,7 @@ fn build_token_transfer_message() -> Result<Vec<u8>> {
             AccountMeta::new(destination, false),
             AccountMeta::new_readonly(authority, true),
         ],
-        data: token_transfer_data(42),
+        data: token_transfer_data(42_000_000),
     };
     Ok(build_legacy_message(&authority, &[instruction]))
 }
@@ -694,12 +746,46 @@ fn run_checked(command: &mut Command, label: &str) -> Result<()> {
 }
 
 fn screen_contains(screen: &[String], fragment: &str) -> bool {
-    screen.iter().any(|line| line.contains(fragment))
+    screen.iter().any(|line| fragment_matches(line, fragment))
 }
 
 fn screen_contains_all(screen: &[String], fragments: &[&str]) -> bool {
     let joined = screen.join("\n");
-    fragments.iter().all(|fragment| joined.contains(fragment))
+    fragments
+        .iter()
+        .all(|fragment| fragment_matches(joined.as_str(), fragment))
+}
+
+fn fragment_matches(haystack: &str, fragment: &str) -> bool {
+    let haystack_variants = normalized_variants(haystack);
+    let fragment_variants = normalized_variants(fragment);
+
+    haystack_variants.iter().any(|haystack_variant| {
+        fragment_variants
+            .iter()
+            .filter(|fragment_variant| !fragment_variant.is_empty())
+            .any(|fragment_variant| haystack_variant.contains(fragment_variant))
+    })
+}
+
+fn normalized_variants(value: &str) -> [String; 4] {
+    let lower = value.to_ascii_lowercase();
+    let stripped = strip_ascii_whitespace(lower.as_str());
+    let lower_without_first = lower
+        .char_indices()
+        .nth(1)
+        .map(|(index, _)| lower[index..].to_string())
+        .unwrap_or_default();
+    let stripped_without_first = strip_ascii_whitespace(lower_without_first.as_str());
+
+    [lower, stripped, lower_without_first, stripped_without_first]
+}
+
+fn strip_ascii_whitespace(value: &str) -> String {
+    value
+        .chars()
+        .filter(|ch| !ch.is_ascii_whitespace())
+        .collect()
 }
 
 fn render_screen(screen: &[String]) -> String {

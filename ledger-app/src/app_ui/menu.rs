@@ -15,26 +15,50 @@
  *  limitations under the License.
  *****************************************************************************/
 
-use ledger_device_sdk::include_gif;
 use ledger_device_sdk::io::Comm;
 
-use crate::settings::Settings;
+#[cfg(any(target_os = "nanosplus", target_os = "nanox"))]
+use ledger_device_sdk::ui::{
+    gadgets::clear_screen,
+    layout::{Layout, Location, StringPlace},
+    screen_util::screen_update,
+};
+
+#[cfg(not(any(target_os = "nanosplus", target_os = "nanox")))]
+use ledger_device_sdk::include_gif;
+#[cfg(not(any(target_os = "nanosplus", target_os = "nanox")))]
 use ledger_device_sdk::nbgl::{NbglGlyph, NbglHomeAndSettings};
 
-pub fn ui_menu_main(_: &mut Comm) -> NbglHomeAndSettings {
-    // Load glyph from 64x64 4bpp gif file with include_gif macro. Creates an NBGL compatible glyph.
+#[cfg(any(target_os = "nanosplus", target_os = "nanox"))]
+pub struct HomeScreen;
+
+#[cfg(any(target_os = "nanosplus", target_os = "nanox"))]
+impl HomeScreen {
+    pub fn show_and_return(&mut self) {
+        clear_screen();
+        ["Solana v2", "app is ready"].place(Location::Middle, Layout::Centered, false);
+        screen_update();
+    }
+}
+
+#[cfg(not(any(target_os = "nanosplus", target_os = "nanox")))]
+pub type HomeScreen = NbglHomeAndSettings;
+
+#[cfg(any(target_os = "nanosplus", target_os = "nanox"))]
+pub fn ui_menu_main(_: &mut Comm) -> HomeScreen {
+    HomeScreen
+}
+
+#[cfg(not(any(target_os = "nanosplus", target_os = "nanox")))]
+pub fn ui_menu_main(_: &mut Comm) -> HomeScreen {
     #[cfg(target_os = "apex_p")]
     const FERRIS: NbglGlyph = NbglGlyph::from_include(include_gif!("glyphs/crab_48x48.png", NBGL));
     #[cfg(any(target_os = "stax", target_os = "flex"))]
     const FERRIS: NbglGlyph = NbglGlyph::from_include(include_gif!("glyphs/crab_64x64.gif", NBGL));
-    #[cfg(any(target_os = "nanosplus", target_os = "nanox"))]
-    const FERRIS: NbglGlyph =
-        NbglGlyph::from_include(include_gif!("glyphs/home_nano_nbgl.png", NBGL));
 
     let settings_strings: [[&str; 2]; 0] = [];
-    let mut settings: Settings = Default::default();
+    let mut settings = crate::settings::Settings::default();
 
-    // Display the home screen.
     NbglHomeAndSettings::new()
         .glyph(&FERRIS)
         .settings(settings.get_mut(), &settings_strings)

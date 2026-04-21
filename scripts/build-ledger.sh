@@ -39,14 +39,14 @@ trap cleanup EXIT
   -v "$ROOT_DIR/codama-parser:/app/codama-parser" \
   -v "$ROOT_DIR/solana-message-light:/app/solana-message-light" \
   -v "$ROOT_DIR/idls:/app/idls" \
-  -v "$TARGET_DIR:/app/target" \
+  -v "$TARGET_DIR:/app/ledger-app/target" \
   --user "$(id -u):$(id -g)" \
   -e LEDGER_DEVICE="$LEDGER_DEVICE" \
   "$IMAGE" \
   /bin/bash -lc '
 set -euo pipefail
 export PATH="/opt/.cargo/bin:$PATH"
-export CARGO_TARGET_DIR=/app/target
+export CARGO_TARGET_DIR=/app/ledger-app/target
 cd /app/ledger-app
 cargo ledger build "$LEDGER_DEVICE"
 ' | tee "$BUILD_LOG"
@@ -54,7 +54,7 @@ cargo ledger build "$LEDGER_DEVICE"
 REPORT_DIR="$TARGET_DIR/$LEDGER_DEVICE/release"
 REPORT_TXT="$REPORT_DIR/$APP_BIN.size.txt"
 REPORT_JSON="$REPORT_DIR/$APP_BIN.size.json"
-SIZE_TARGET="/app/target/$LEDGER_DEVICE/release/$APP_BIN"
+SIZE_TARGET="/app/ledger-app/target/$LEDGER_DEVICE/release/$APP_BIN"
 SIZE_LINE="$(awk -v target="$SIZE_TARGET" '$NF == target { line = $0 } END { print line }' "$BUILD_LOG")"
 
 if [ -z "$SIZE_LINE" ]; then

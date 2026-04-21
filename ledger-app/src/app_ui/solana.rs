@@ -1,13 +1,17 @@
 use alloc::{format, string::String, vec::Vec};
 
+#[cfg(any(target_os = "nanosplus", target_os = "nanox"))]
+use crate::app_ui::review_scroller;
 use crate::{
     idls::{decode_instruction as decode_builtin_instruction, load_builtin_idls, LoadedBuiltinIdl},
     AppSW,
 };
 use codama_parser::{DecodedField, DecodedInstruction, DecodedNumber, DecodedValue};
 use ledger_device_sdk::hash::{sha2::Sha2_256, HashInit};
+#[cfg(not(any(target_os = "nanosplus", target_os = "nanox")))]
 use ledger_device_sdk::include_gif;
 use ledger_device_sdk::io::Comm;
+#[cfg(not(any(target_os = "nanosplus", target_os = "nanox")))]
 use ledger_device_sdk::nbgl::{
     Field, NbglGlyph, NbglReview, NbglReviewStatus, StatusType, TransactionType,
 };
@@ -16,13 +20,12 @@ use solana_message_light::{
     StaticAccountRefView,
 };
 
+#[cfg(not(any(target_os = "nanosplus", target_os = "nanox")))]
 #[cfg(target_os = "apex_p")]
 const APP_GLYPH: NbglGlyph = NbglGlyph::from_include(include_gif!("glyphs/crab_48x48.png", NBGL));
+#[cfg(not(any(target_os = "nanosplus", target_os = "nanox")))]
 #[cfg(any(target_os = "stax", target_os = "flex"))]
 const APP_GLYPH: NbglGlyph = NbglGlyph::from_include(include_gif!("glyphs/crab_64x64.gif", NBGL));
-#[cfg(any(target_os = "nanosplus", target_os = "nanox"))]
-const APP_GLYPH: NbglGlyph =
-    NbglGlyph::from_include(include_gif!("glyphs/home_nano_nbgl.png", NBGL));
 
 const IX_DATA_CHUNK_BYTES: usize = 16;
 const MESSAGE_HASH_LENGTH: usize = 32;
@@ -32,47 +35,62 @@ struct OwnedField {
     value: String,
 }
 
-pub fn review_message<const N: usize>(
-    comm: &mut Comm<N>,
-    _signer_pubkey: &[u8; 32],
+pub fn review_message(
+    comm: &mut Comm,
+    signer_pubkey: &[u8; 32],
     message: &[u8],
 ) -> Result<bool, AppSW> {
-    let view = MessageView::try_new(message).map_err(|_| AppSW::InvalidData)?;
-    let builtin_idls = load_builtin_idls();
-    let mut owned_fields = Vec::new();
-
-    for instruction in view.instructions() {
-        let instruction = instruction.map_err(|_| AppSW::InvalidData)?;
-        review_instruction(
-            &mut owned_fields,
-            &view,
-            instruction,
-            builtin_idls.as_slice(),
-        )?;
+    #[cfg(any(target_os = "nanosplus", target_os = "nanox"))]
+    {
+        return review_scroller::review_message(comm, signer_pubkey, message);
     }
 
-    owned_fields.push(OwnedField {
-        name: String::from("Message SHA-256"),
-        value: format_message_hash(message)?,
-    });
+    #[cfg(not(any(target_os = "nanosplus", target_os = "nanox")))]
+    {
+        let view = MessageView::try_new(message).map_err(|_| AppSW::InvalidData)?;
+        let builtin_idls = load_builtin_idls();
+        let mut owned_fields = Vec::new();
 
-    let rendered_fields: Vec<Field<'_>> = owned_fields
-        .iter()
-        .map(|field| Field {
-            name: field.name.as_str(),
-            value: field.value.as_str(),
-        })
-        .collect();
+        for instruction in view.instructions() {
+            let instruction = instruction.map_err(|_| AppSW::InvalidData)?;
+            review_instruction(
+                &mut owned_fields,
+                &view,
+                instruction,
+                builtin_idls.as_slice(),
+            )?;
+        }
 
-    Ok(NbglReview::new()
-        .tx_type(TransactionType::Transaction)
-        .glyph(&APP_GLYPH)
-        .light()
-        .titles("Review Solana tx", "", "Sign transaction")
-        .show(comm, rendered_fields.as_slice()))
+        owned_fields.push(OwnedField {
+            name: String::from("Message SHA-256"),
+            value: format_message_hash(message)?,
+        });
+
+        let rendered_fields: Vec<Field<'_>> = owned_fields
+            .iter()
+            .map(|field| Field {
+                name: field.name.as_str(),
+                value: field.value.as_str(),
+            })
+            .collect();
+
+        Ok(NbglReview::new()
+            .tx_type(TransactionType::Transaction)
+            .glyph(&APP_GLYPH)
+            .light()
+            .titles("Review Solana tx", "", "Sign transaction")
+            .show(comm, rendered_fields.as_slice()))
+    }
 }
 
-pub fn show_status<const N: usize>(comm: &mut Comm<N>, ok: bool) {
+pub fn show_status(comm: &mut Comm, ok: bool) {
+    #[cfg(any(target_os = "nanosplus", target_os = "nanox"))]
+    {
+        let _ = (comm, ok);
+        return;
+    }
+
+    #[cfg(not(any(target_os = "nanosplus", target_os = "nanox")))]
     NbglReviewStatus::new()
         .status_type(StatusType::Transaction)
         .show(comm, ok);

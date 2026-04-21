@@ -16,24 +16,42 @@
  *****************************************************************************/
 
 use crate::AppSW;
-
-use ledger_device_sdk::include_gif;
 use ledger_device_sdk::io::Comm;
+
+#[cfg(any(target_os = "nanosplus", target_os = "nanox"))]
+use ledger_device_sdk::ui::gadgets::{Field, MultiFieldReview};
+
+#[cfg(not(any(target_os = "nanosplus", target_os = "nanox")))]
+use ledger_device_sdk::include_gif;
+#[cfg(not(any(target_os = "nanosplus", target_os = "nanox")))]
 use ledger_device_sdk::nbgl::{NbglAddressReview, NbglGlyph};
 
-pub fn ui_display_address<const N: usize>(
-    comm: &mut Comm<N>,
-    address: &str,
-) -> Result<bool, AppSW> {
-    // Load glyph from file with include_gif macro. Creates an NBGL compatible glyph.
+#[cfg(any(target_os = "nanosplus", target_os = "nanox"))]
+pub fn ui_display_address(_: &mut Comm, address: &str) -> Result<bool, AppSW> {
+    let fields = [Field {
+        name: "Address",
+        value: address,
+    }];
+
+    Ok(MultiFieldReview::new(
+        &fields,
+        &["Verify", "Solana address"],
+        None,
+        "Approve",
+        None,
+        "Reject",
+        None,
+    )
+    .show())
+}
+
+#[cfg(not(any(target_os = "nanosplus", target_os = "nanox")))]
+pub fn ui_display_address(comm: &mut Comm, address: &str) -> Result<bool, AppSW> {
     #[cfg(target_os = "apex_p")]
     const FERRIS: NbglGlyph = NbglGlyph::from_include(include_gif!("glyphs/crab_48x48.png", NBGL));
     #[cfg(any(target_os = "stax", target_os = "flex"))]
     const FERRIS: NbglGlyph = NbglGlyph::from_include(include_gif!("glyphs/crab_64x64.gif", NBGL));
-    #[cfg(any(target_os = "nanosplus", target_os = "nanox"))]
-    const FERRIS: NbglGlyph = NbglGlyph::from_include(include_gif!("icons/crab_14x14.gif", NBGL));
 
-    // Display the address confirmation screen.
     Ok(NbglAddressReview::new()
         .glyph(&FERRIS)
         .review_title("Verify Solana address")

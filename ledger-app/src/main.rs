@@ -23,6 +23,8 @@ extern crate alloc;
 mod app_ui {
     pub mod address;
     pub mod menu;
+    #[cfg(any(target_os = "nanosplus", target_os = "nanox"))]
+    pub mod review_scroller;
     pub mod solana;
 }
 mod idls;
@@ -32,7 +34,7 @@ mod solana;
 use app_ui::address::ui_display_address;
 use app_ui::menu::ui_menu_main;
 use app_ui::solana::{review_message, show_status};
-use ledger_device_sdk::io::{self, init_comm, ApduHeader, Command, Reply, StatusWords};
+use ledger_device_sdk::io::{self, ApduHeader, Comm, Reply, StatusWords};
 use solana::{
     app_config_response, derive_pubkey, parse_derivation_path, parse_sign_payload, sign_message,
     SignMessageContext, APP_CLA, INS_GET_APP_CONFIG, INS_GET_PUBKEY, INS_SIGN_MESSAGE, P1_CONFIRM,
@@ -40,7 +42,6 @@ use solana::{
 };
 
 ledger_device_sdk::set_panic!(ledger_device_sdk::exiting_panic);
-ledger_device_sdk::define_comm!(COMM);
 
 #[repr(u16)]
 #[derive(Clone, Copy, PartialEq)]
@@ -60,12 +61,6 @@ pub enum AppSW {
 impl From<AppSW> for Reply {
     fn from(sw: AppSW) -> Reply {
         Reply(sw as u16)
-    }
-}
-
-impl From<io::CommError> for AppSW {
-    fn from(_: io::CommError) -> Self {
-        AppSW::CommError
     }
 }
 
@@ -94,43 +89,39 @@ impl TryFrom<ApduHeader> for Instruction {
     }
 }
 
-fn handle_get_app_config<'a>(command: Command<'a>) -> Result<io::CommandResponse<'a>, AppSW> {
+fn handle_get_app_config(comm: &mut Comm) -> Result<(), AppSW> {
     let config = app_config_response()?;
-    let mut response = command.into_response();
-    response.append(&config)?;
-    Ok(response)
+    comm.append(&config);
+    Ok(())
 }
 
-fn handle_get_pubkey<'a>(
-    command: Command<'a>,
-    display: bool,
-) -> Result<io::CommandResponse<'a>, AppSW> {
-    let (path, consumed) = parse_derivation_path(command.get_data())?;
-    if consumed != command.get_data().len() {
+fn handle_get_pubkey(comm: &mut Comm, display: bool) -> Result<(), AppSW> {
+    let data = comm.get_data().map_err(|_| AppSW::WrongApduLength)?;
+    let (path, consumed) = parse_derivation_path(data)?;
+    if consumed != data.len() {
         return Err(AppSW::WrongApduLength);
     }
 
     let pubkey = derive_pubkey(path.as_slice())?;
     let address = bs58::encode(pubkey).into_string();
 
-    let comm = command.into_comm();
     if display && !ui_display_address(comm, address.as_str())? {
         return Err(AppSW::Deny);
     }
 
-    let mut response = comm.begin_response();
-    response.append(&pubkey)?;
-    Ok(response)
+    comm.append(&pubkey);
+    Ok(())
 }
 
-fn handle_sign_message<'a>(
-    command: Command<'a>,
+fn handle_sign_message(
+    comm: &mut Comm,
     p2: u8,
     sign_context: &mut SignMessageContext,
-) -> Result<io::CommandResponse<'a>, AppSW> {
-    let completed = sign_context.ingest(p2, command.get_data())?;
+) -> Result<(), AppSW> {
+    let completed =
+        sign_context.ingest(p2, comm.get_data().map_err(|_| AppSW::WrongApduLength)?)?;
     if !completed {
-        return Ok(command.into_response());
+        return Ok(());
     }
 
     let sign_payload = match parse_sign_payload(sign_context.payload()) {
@@ -149,7 +140,6 @@ fn handle_sign_message<'a>(
         }
     };
 
-    let comm = command.into_comm();
     if !review_message(comm, &signer_pubkey, sign_payload.message)? {
         sign_context.reset();
         return Err(AppSW::Deny);
@@ -164,44 +154,31 @@ fn handle_sign_message<'a>(
     };
 
     show_status(comm, true);
-    let mut response = comm.begin_response();
-    response.append(&signature)?;
+    comm.append(&signature);
     sign_context.reset();
-    Ok(response)
+    Ok(())
 }
 
 #[no_mangle]
 extern "C" fn sample_main(_arg0: u32) {
-    let comm = init_comm(&COMM);
-    comm.set_expected_cla(APP_CLA);
-    let mut home = ui_menu_main(comm);
+    let mut comm = Comm::new().set_expected_cla(APP_CLA);
+    let mut home = ui_menu_main(&mut comm);
     home.show_and_return();
 
     let mut sign_context = SignMessageContext::new();
 
     loop {
-        let command = comm.next_command();
-        let decoded = command.decode::<Instruction>();
-        let Ok(ins) = decoded else {
-            sign_context.reset();
-            let _ = comm.send(&[], decoded.unwrap_err());
-            continue;
-        };
+        let ins = comm.next_command::<Instruction>();
 
         if !matches!(ins, Instruction::SignMessage { .. }) {
             sign_context.reset();
         }
 
-        let status = match handle_apdu(command, ins, &mut sign_context) {
-            Ok(reply) => {
-                let _ = reply.send(AppSW::Ok);
-                AppSW::Ok
-            }
-            Err(sw) => {
-                let _ = comm.send(&[], sw);
-                sw
-            }
+        let status = match handle_apdu(&mut comm, ins, &mut sign_context) {
+            Ok(()) => AppSW::Ok,
+            Err(sw) => sw,
         };
+        comm.reply(status);
 
         if matches!(status, AppSW::Ok | AppSW::Deny) {
             home.show_and_return();
@@ -209,14 +186,14 @@ extern "C" fn sample_main(_arg0: u32) {
     }
 }
 
-fn handle_apdu<'a>(
-    command: Command<'a>,
+fn handle_apdu(
+    comm: &mut Comm,
     ins: Instruction,
     sign_context: &mut SignMessageContext,
-) -> Result<io::CommandResponse<'a>, AppSW> {
+) -> Result<(), AppSW> {
     match ins {
-        Instruction::GetAppConfig => handle_get_app_config(command),
-        Instruction::GetPubkey { display } => handle_get_pubkey(command, display),
-        Instruction::SignMessage { p2 } => handle_sign_message(command, p2, sign_context),
+        Instruction::GetAppConfig => handle_get_app_config(comm),
+        Instruction::GetPubkey { display } => handle_get_pubkey(comm, display),
+        Instruction::SignMessage { p2 } => handle_sign_message(comm, p2, sign_context),
     }
 }
