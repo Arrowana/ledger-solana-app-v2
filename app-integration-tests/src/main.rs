@@ -9,9 +9,10 @@ use anyhow::{anyhow, bail, ensure, Context, Result};
 use bs58::Alphabet;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use ledger_solana_cli::apdu::{
-    build_get_app_config_apdu, build_get_pubkey_apdu, build_sign_message_apdus,
-    decode_apdu_response, decode_get_app_config_response, decode_get_pubkey_response,
-    decode_sign_message_response,
+    build_get_app_config_apdu, build_get_pubkey_apdu, build_load_idl_apdus,
+    build_sign_message_apdus, decode_apdu_response, decode_get_app_config_response,
+    decode_get_pubkey_response, decode_load_idl_response, decode_sign_message_response,
+    IdlAttestation,
 };
 use ledger_solana_cli::constants::{SW_OK, SW_USER_REFUSED};
 use ledger_solana_cli::derivation::parse_derivation_path;
@@ -38,6 +39,17 @@ const ASSOCIATED_TOKEN_ACCOUNT_PROGRAM_ID: Pubkey =
     Pubkey::from_str_const("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
 const TOKEN_PROGRAM_ID: Pubkey =
     Pubkey::from_str_const("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+const IMPORTED_SAMPLE_PROGRAM_ID: Pubkey =
+    Pubkey::from_str_const("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
+const IMPORTED_SAMPLE_IDL: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../testdata/sample-program.pruned.codama.json"
+));
+const IMPORTED_SAMPLE_SIGNER_PUBKEY_HEX: &str =
+    "99a191c52aefd12a1c6fca50c4a71d3a51e596deacbedd5a539a2c57ca5e7dc4";
+const IMPORTED_SAMPLE_SIGNATURE_HEX: &str =
+    "b7a73aa8a9bcb18883f4d75b577ec0511577050641ab61c747c6801523c123e214d0992524faf68b43be6e6dee7111b61df654f3d26e34f732edbe356558ae0c";
+const NO_FORBIDDEN_FRAGMENTS: &[&str] = &[];
 
 #[derive(Parser)]
 #[command(name = "app-integration-tests")]
@@ -57,6 +69,8 @@ struct SpeculosSmokeArgs {
     skip_build: bool,
     #[arg(long, default_value_t = false)]
     manual_review: bool,
+    #[arg(long, default_value_t = false)]
+    manual_load_idl_review: bool,
     #[arg(long, default_value = DEFAULT_DERIVATION_PATH)]
     derivation_path: String,
     #[arg(long)]
@@ -75,6 +89,8 @@ enum SmokeCaseName {
     ComputeBudgetLimit,
     AtaCreate,
     TokenTransfer,
+    ImportedProgramGeneric,
+    ImportedProgramDecoded,
 }
 
 impl SmokeCaseName {
@@ -93,6 +109,8 @@ impl SmokeCaseName {
             Self::ComputeBudgetLimit => "compute-budget-limit",
             Self::AtaCreate => "ata-create",
             Self::TokenTransfer => "token-transfer",
+            Self::ImportedProgramGeneric => "imported-program-generic",
+            Self::ImportedProgramDecoded => "imported-program-decoded",
         }
     }
 }
@@ -108,6 +126,7 @@ struct SmokeCase {
     message_hash: String,
     review_section_count: usize,
     expected_screens: &'static [ExpectedScreen],
+    forbidden_fragments: &'static [&'static str],
 }
 
 const MESSAGE_HASH_SCREEN: ExpectedScreen = ExpectedScreen {
@@ -153,6 +172,29 @@ const TOKEN_TRANSFER_SCREENS: &[ExpectedScreen] = &[
     },
     ExpectedScreen {
         fragments: &["authority", "<wallet>"],
+    },
+];
+
+const UNKNOWN_PROGRAM_GENERIC_SCREENS: &[ExpectedScreen] = &[ExpectedScreen {
+    fragments: &["dataLen", "17 bytes"],
+}];
+
+const UNKNOWN_PROGRAM_GENERIC_FORBIDDEN: &[&str] = &[
+    "reviewRequest",
+    "requestIndex",
+    "urgent",
+    "sampleOperations",
+];
+
+const IMPORTED_PROGRAM_SCREENS: &[ExpectedScreen] = &[
+    ExpectedScreen {
+        fragments: &["1/1", "sampleOperations", "reviewRequest"],
+    },
+    ExpectedScreen {
+        fragments: &["request", "42"],
+    },
+    ExpectedScreen {
+        fragments: &["urgent", "true"],
     },
 ];
 
@@ -376,6 +418,15 @@ fn run_speculos_smoke(args: SpeculosSmokeArgs) -> Result<()> {
         )?;
     }
 
+    run_imported_idl_flow(
+        &api,
+        ports.apdu,
+        derivation_path.as_slice(),
+        pubkey,
+        args.manual_review,
+        args.manual_load_idl_review,
+    )?;
+
     println!("==> Speculos smoke tests completed successfully");
     Ok(())
 }
@@ -392,6 +443,86 @@ fn read_pubkey(apdu_port: u16, derivation_path: &[u32]) -> Result<[u8; 32]> {
     let (data, status) = decode_apdu_response(&response)?;
     assert_status(status, "get-pubkey")?;
     decode_get_pubkey_response(data).context("failed to decode get-pubkey response")
+}
+
+fn run_imported_idl_flow(
+    api: &SpeculosApi,
+    apdu_port: u16,
+    derivation_path: &[u32],
+    signer_pubkey: [u8; 32],
+    manual_review: bool,
+    manual_load_idl_review: bool,
+) -> Result<()> {
+    println!("==> Running imported IDL flow");
+
+    let generic_case = build_imported_sample_case(signer_pubkey, false)?;
+    run_sign_case(
+        api,
+        apdu_port,
+        derivation_path,
+        &generic_case,
+        manual_review,
+    )?;
+
+    let attestation = imported_sample_attestation()?;
+    let load_response = run_load_idl_case(
+        api,
+        apdu_port,
+        IMPORTED_SAMPLE_IDL,
+        &[attestation],
+        manual_load_idl_review,
+    )?;
+    ensure!(
+        load_response.program_id == IMPORTED_SAMPLE_PROGRAM_ID.to_bytes(),
+        "load-idl returned wrong program id: {}",
+        bs58::encode(load_response.program_id)
+            .with_alphabet(Alphabet::BITCOIN)
+            .into_string()
+    );
+    ensure!(
+        load_response.signer_count == 1,
+        "load-idl returned wrong signer count: {}",
+        load_response.signer_count
+    );
+    ensure!(
+        load_response.idl_len as usize == IMPORTED_SAMPLE_IDL.len(),
+        "load-idl returned wrong idl length: {}",
+        load_response.idl_len
+    );
+    println!(
+        "==> load-idl imported {} with {} signer",
+        bs58::encode(load_response.program_id)
+            .with_alphabet(Alphabet::BITCOIN)
+            .into_string(),
+        load_response.signer_count
+    );
+
+    let decoded_case = build_imported_sample_case(signer_pubkey, true)?;
+    run_sign_case(
+        api,
+        apdu_port,
+        derivation_path,
+        &decoded_case,
+        manual_review,
+    )?;
+
+    let mut invalid_attestation = attestation;
+    invalid_attestation.signature[0] ^= 0x01;
+    let status = load_idl_expect_status(apdu_port, IMPORTED_SAMPLE_IDL, &[invalid_attestation])?;
+    ensure!(
+        status == 0x6a80,
+        "invalid load-idl should fail with 0x6a80, got 0x{status:04x}"
+    );
+    println!("==> invalid load-idl signature rejected with 0x{status:04x}");
+
+    run_sign_case(
+        api,
+        apdu_port,
+        derivation_path,
+        &decoded_case,
+        manual_review,
+    )?;
+    Ok(())
 }
 
 fn run_sign_case(
@@ -424,6 +555,12 @@ fn run_sign_case(
             println!("      - {}", expected.fragments.join(" / "));
         }
         println!("      - {}", MESSAGE_HASH_SCREEN.fragments.join(" / "));
+        if !case.forbidden_fragments.is_empty() {
+            println!(
+                "    Fragments that must not appear: {}",
+                case.forbidden_fragments.join(", ")
+            );
+        }
         println!("    Waiting for manual approval in the web UI...");
 
         let signature = wait_for_sign_result(rx, case.name, true)?;
@@ -482,6 +619,17 @@ fn run_sign_case(
         MESSAGE_HASH_SCREEN.fragments,
         render_screens(&screens)
     );
+    for forbidden in case.forbidden_fragments {
+        ensure!(
+            screens
+                .iter()
+                .all(|screen| !screen_contains(screen, forbidden)),
+            "review flow for {} unexpectedly contained forbidden fragment {:?}; collected screens: {}",
+            case.name.slug(),
+            forbidden,
+            render_screens(&screens)
+        );
+    }
 
     api.press_button("both")?;
     current = api.wait_for_screen_change(&current, SCREEN_CHANGE_TIMEOUT)?;
@@ -536,6 +684,18 @@ fn wait_for_sign_result(
     }
 }
 
+fn wait_for_load_idl_result(
+    rx: mpsc::Receiver<Result<ledger_solana_cli::apdu::LoadIdlResponse>>,
+    manual_review: bool,
+) -> Result<ledger_solana_cli::apdu::LoadIdlResponse> {
+    if manual_review {
+        rx.recv().context("manual load-idl review channel closed")?
+    } else {
+        rx.recv_timeout(SIGN_RESULT_TIMEOUT)
+            .context("timed out waiting for load-idl result")?
+    }
+}
+
 fn sign_message(apdu_port: u16, derivation_path: &[u32], message: &[u8]) -> Result<[u8; 64]> {
     let mut transport =
         SpeculosTransport::connect("127.0.0.1", apdu_port).context("failed to connect to APDU")?;
@@ -559,6 +719,199 @@ fn sign_message(apdu_port: u16, derivation_path: &[u32], message: &[u8]) -> Resu
     signature.context("missing final sign-message response")
 }
 
+fn run_load_idl_case(
+    api: &SpeculosApi,
+    apdu_port: u16,
+    idl_bytes: &[u8],
+    attestations: &[IdlAttestation],
+    manual_review: bool,
+) -> Result<ledger_solana_cli::apdu::LoadIdlResponse> {
+    let idl_bytes = idl_bytes.to_vec();
+    let attestations = attestations.to_vec();
+    let attestations_for_thread = attestations.clone();
+    let (tx, rx) = mpsc::channel();
+
+    thread::spawn(move || {
+        let result = load_idl(
+            apdu_port,
+            idl_bytes.as_slice(),
+            attestations_for_thread.as_slice(),
+        );
+        let _ = tx.send(result);
+    });
+
+    let home_screen = api.current_screen()?;
+    let current = api.wait_for_screen_change(&home_screen, SCREEN_TIMEOUT)?;
+    let program_id = bs58::encode(IMPORTED_SAMPLE_PROGRAM_ID.to_bytes())
+        .with_alphabet(Alphabet::BITCOIN)
+        .into_string();
+    let signer_values = attestations
+        .iter()
+        .enumerate()
+        .map(|(index, attestation)| {
+            (
+                format!("signer{}", index + 1),
+                bs58::encode(attestation.signer_pubkey)
+                    .with_alphabet(Alphabet::BITCOIN)
+                    .into_string(),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    if manual_review {
+        println!("==> Manual review enabled for load-idl");
+        println!("    Continue in the Speculos web UI: {}", api.base_url);
+        println!("    Expected import review fields:");
+        println!("      - programId / {}", prefix_fragment(&program_id, 4));
+        for (label, signer) in &signer_values {
+            println!("      - {} / {}", label, prefix_fragment(signer, 4));
+        }
+        println!("    Waiting for manual import approval in the web UI...");
+
+        let response = wait_for_load_idl_result(rx, true)?;
+        api.wait_for_screen_contains(HOME_SCREEN_READY, SCREEN_TIMEOUT)?;
+        return Ok(response);
+    }
+
+    let (screens, validation_screen) = collect_load_idl_review_screens(api, current)?;
+    assert_load_idl_review_screens(&screens, &program_id, signer_values.as_slice())?;
+    ensure!(
+        screen_contains(&validation_screen, "Import"),
+        "expected load-idl validation screen; got {}",
+        render_screen(&validation_screen)
+    );
+
+    api.press_button("both")?;
+    let response = wait_for_load_idl_result(rx, false)?;
+    api.wait_for_screen_contains(HOME_SCREEN_READY, SCREEN_TIMEOUT)?;
+    Ok(response)
+}
+
+fn load_idl(
+    apdu_port: u16,
+    idl_bytes: &[u8],
+    attestations: &[IdlAttestation],
+) -> Result<ledger_solana_cli::apdu::LoadIdlResponse> {
+    let mut transport =
+        SpeculosTransport::connect("127.0.0.1", apdu_port).context("failed to connect to APDU")?;
+    let apdus = build_load_idl_apdus(idl_bytes, attestations)?;
+    let mut response = None;
+
+    for (index, apdu) in apdus.iter().enumerate() {
+        let raw = transport.exchange(apdu)?;
+        let (data, status) = decode_apdu_response(&raw)?;
+        assert_status(status, "load-idl")?;
+        if index + 1 == apdus.len() {
+            response =
+                Some(decode_load_idl_response(data).context("failed to decode load-idl response")?);
+        } else if !data.is_empty() {
+            bail!("unexpected payload in intermediate load-idl response");
+        }
+    }
+
+    response.context("missing final load-idl response")
+}
+
+fn collect_load_idl_review_screens(
+    api: &SpeculosApi,
+    start: Vec<String>,
+) -> Result<(Vec<Vec<String>>, Vec<String>)> {
+    let mut screens = vec![start.clone()];
+    let mut current = start;
+
+    for _ in 0..32 {
+        api.press_button("right")?;
+        let next = api
+            .try_wait_for_screen_change(&current, SCREEN_CHANGE_TIMEOUT)?
+            .context("load-idl review did not advance")?;
+        screens.push(next.clone());
+        current = next;
+
+        if screen_contains(&current, "Reject") {
+            api.press_button("left")?;
+            let validation = api.wait_for_screen_change(&current, SCREEN_CHANGE_TIMEOUT)?;
+            screens.push(validation.clone());
+            return Ok((screens, validation));
+        }
+    }
+
+    bail!(
+        "load-idl review did not reach reject screen: {}",
+        render_screens(&screens)
+    )
+}
+
+fn assert_load_idl_review_screens(
+    screens: &[Vec<String>],
+    program_id: &str,
+    signer_values: &[(String, String)],
+) -> Result<()> {
+    ensure!(
+        screens
+            .iter()
+            .any(|screen| screen_contains(screen, "program")),
+        "load-idl review missing programId label: {}",
+        render_screens(screens)
+    );
+    ensure!(
+        screens
+            .iter()
+            .any(|screen| screen_contains(screen, prefix_fragment(program_id, 4))),
+        "load-idl review missing programId value: {}",
+        render_screens(screens)
+    );
+
+    for (label, signer) in signer_values {
+        ensure!(
+            screens.iter().any(|screen| screen_contains(screen, label)),
+            "load-idl review missing signer label {:?}: {}",
+            label,
+            render_screens(screens)
+        );
+        ensure!(
+            screens
+                .iter()
+                .any(|screen| screen_contains(screen, prefix_fragment(signer, 4))),
+            "load-idl review missing signer value {:?}: {}",
+            label,
+            render_screens(screens)
+        );
+    }
+
+    Ok(())
+}
+
+fn load_idl_expect_status(
+    apdu_port: u16,
+    idl_bytes: &[u8],
+    attestations: &[IdlAttestation],
+) -> Result<u16> {
+    let mut transport =
+        SpeculosTransport::connect("127.0.0.1", apdu_port).context("failed to connect to APDU")?;
+    let apdus = build_load_idl_apdus(idl_bytes, attestations)?;
+    let mut final_status = None;
+
+    for (index, apdu) in apdus.iter().enumerate() {
+        let raw = transport.exchange(apdu)?;
+        let (data, status) = decode_apdu_response(&raw)?;
+        if index + 1 == apdus.len() {
+            ensure!(
+                data.is_empty(),
+                "unexpected payload in rejected final load-idl response"
+            );
+            final_status = Some(status);
+        } else {
+            assert_status(status, "load-idl chunk")?;
+            ensure!(
+                data.is_empty(),
+                "unexpected payload in intermediate load-idl response"
+            );
+        }
+    }
+
+    final_status.context("missing final load-idl status")
+}
+
 fn exchange_apdu(apdu_port: u16, apdu: &[u8]) -> Result<Vec<u8>> {
     let mut transport =
         SpeculosTransport::connect("127.0.0.1", apdu_port).context("failed to connect to APDU")?;
@@ -579,6 +932,9 @@ fn build_case(case: SmokeCaseName, signer_pubkey: [u8; 32]) -> Result<SmokeCase>
         SmokeCaseName::ComputeBudgetLimit => COMPUTE_BUDGET_LIMIT_SCREENS,
         SmokeCaseName::AtaCreate => ATA_CREATE_SCREENS,
         SmokeCaseName::TokenTransfer => TOKEN_TRANSFER_SCREENS,
+        SmokeCaseName::ImportedProgramGeneric | SmokeCaseName::ImportedProgramDecoded => {
+            unreachable!("imported program cases are built separately")
+        }
     };
 
     let message = match case {
@@ -586,6 +942,9 @@ fn build_case(case: SmokeCaseName, signer_pubkey: [u8; 32]) -> Result<SmokeCase>
         SmokeCaseName::ComputeBudgetLimit => build_compute_budget_limit_message(signer_pubkey)?,
         SmokeCaseName::AtaCreate => build_ata_create_message(signer_pubkey)?,
         SmokeCaseName::TokenTransfer => build_token_transfer_message(signer_pubkey)?,
+        SmokeCaseName::ImportedProgramGeneric | SmokeCaseName::ImportedProgramDecoded => {
+            unreachable!("imported program cases are built separately")
+        }
     };
     let message_hash = message_sha256(&message);
 
@@ -595,6 +954,33 @@ fn build_case(case: SmokeCaseName, signer_pubkey: [u8; 32]) -> Result<SmokeCase>
         message_hash,
         review_section_count: 2,
         expected_screens,
+        forbidden_fragments: NO_FORBIDDEN_FRAGMENTS,
+    })
+}
+
+fn build_imported_sample_case(signer_pubkey: [u8; 32], decoded: bool) -> Result<SmokeCase> {
+    let message = build_imported_sample_message(signer_pubkey)?;
+    let message_hash = message_sha256(&message);
+
+    Ok(SmokeCase {
+        name: if decoded {
+            SmokeCaseName::ImportedProgramDecoded
+        } else {
+            SmokeCaseName::ImportedProgramGeneric
+        },
+        message,
+        message_hash,
+        review_section_count: 2,
+        expected_screens: if decoded {
+            IMPORTED_PROGRAM_SCREENS
+        } else {
+            UNKNOWN_PROGRAM_GENERIC_SCREENS
+        },
+        forbidden_fragments: if decoded {
+            NO_FORBIDDEN_FRAGMENTS
+        } else {
+            UNKNOWN_PROGRAM_GENERIC_FORBIDDEN
+        },
     })
 }
 
@@ -658,6 +1044,16 @@ fn build_token_transfer_message(signer_pubkey: [u8; 32]) -> Result<Vec<u8>> {
     Ok(build_legacy_message(&authority, &[instruction]))
 }
 
+fn build_imported_sample_message(signer_pubkey: [u8; 32]) -> Result<Vec<u8>> {
+    let payer = Pubkey::new_from_array(signer_pubkey);
+    let instruction = Instruction {
+        program_id: IMPORTED_SAMPLE_PROGRAM_ID,
+        accounts: vec![],
+        data: imported_sample_instruction_data(),
+    };
+    Ok(build_legacy_message(&payer, &[instruction]))
+}
+
 fn build_legacy_message(payer: &Pubkey, instructions: &[Instruction]) -> Vec<u8> {
     Message::new(instructions, Some(payer)).serialize()
 }
@@ -690,8 +1086,34 @@ fn token_transfer_data(amount: u64) -> Vec<u8> {
     out
 }
 
+fn imported_sample_instruction_data() -> Vec<u8> {
+    let mut out = Vec::with_capacity(17);
+    out.extend_from_slice(&hex::decode("2122232425262728").expect("valid sample selector"));
+    out.extend_from_slice(&42u64.to_le_bytes());
+    out.push(1);
+    out
+}
+
+fn imported_sample_attestation() -> Result<IdlAttestation> {
+    Ok(IdlAttestation {
+        signer_pubkey: decode_hex_array::<32>(IMPORTED_SAMPLE_SIGNER_PUBKEY_HEX)?,
+        signature: decode_hex_array::<64>(IMPORTED_SAMPLE_SIGNATURE_HEX)?,
+    })
+}
+
 fn repeated_pubkey(byte: u8) -> Pubkey {
     Pubkey::new_from_array([byte; 32])
+}
+
+fn decode_hex_array<const N: usize>(value: &str) -> Result<[u8; N]> {
+    let bytes = hex::decode(value).with_context(|| format!("invalid hex fixture: {value}"))?;
+    if bytes.len() != N {
+        bail!("expected {N} decoded hex bytes, got {}", bytes.len());
+    }
+
+    let mut out = [0u8; N];
+    out.copy_from_slice(&bytes);
+    Ok(out)
 }
 
 fn selected_cases(args: &SpeculosSmokeArgs) -> Vec<SmokeCaseName> {
@@ -786,6 +1208,14 @@ fn strip_ascii_whitespace(value: &str) -> String {
         .chars()
         .filter(|ch| !ch.is_ascii_whitespace())
         .collect()
+}
+
+fn prefix_fragment(value: &str, max_chars: usize) -> &str {
+    if value.len() <= max_chars {
+        value
+    } else {
+        &value[..max_chars]
+    }
 }
 
 fn render_screen(screen: &[String]) -> String {

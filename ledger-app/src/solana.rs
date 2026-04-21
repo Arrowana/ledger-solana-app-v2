@@ -7,6 +7,7 @@ pub const APP_CLA: u8 = 0xe0;
 pub const INS_GET_APP_CONFIG: u8 = 0x04;
 pub const INS_GET_PUBKEY: u8 = 0x05;
 pub const INS_SIGN_MESSAGE: u8 = 0x06;
+pub const INS_LOAD_IDL: u8 = 0x07;
 
 pub const P1_NON_CONFIRM: u8 = 0x00;
 pub const P1_CONFIRM: u8 = 0x01;
@@ -18,6 +19,7 @@ pub const PUBKEY_LENGTH: usize = 32;
 pub const SIGNATURE_LENGTH: usize = 64;
 pub const MAX_BIP32_PATH_LENGTH: usize = 10;
 pub const MAX_SIGN_PAYLOAD_LENGTH: usize = 2048;
+pub const MAX_LOAD_IDL_PAYLOAD_LENGTH: usize = 3072;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DerivationPath {
@@ -41,6 +43,11 @@ pub struct SignMessageContext {
     in_progress: bool,
 }
 
+pub struct LoadIdlContext {
+    payload: Vec<u8>,
+    in_progress: bool,
+}
+
 impl SignMessageContext {
     pub fn new() -> Self {
         Self {
@@ -59,38 +66,86 @@ impl SignMessageContext {
     }
 
     pub fn ingest(&mut self, p2: u8, data: &[u8]) -> Result<bool, AppSW> {
-        let has_extend = (p2 & P2_EXTEND) != 0;
-        let has_more = (p2 & P2_MORE) != 0;
-        if p2 & !(P2_EXTEND | P2_MORE) != 0 {
-            self.reset();
-            return Err(AppSW::WrongP1P2);
-        }
-
-        if !self.in_progress {
-            if has_extend {
-                self.reset();
-                return Err(AppSW::WrongP1P2);
-            }
-            self.payload.clear();
-            self.in_progress = true;
-        } else if !has_extend {
-            self.reset();
-            return Err(AppSW::WrongP1P2);
-        }
-
-        if self.payload.len() + data.len() > MAX_SIGN_PAYLOAD_LENGTH {
-            self.reset();
-            return Err(AppSW::WrongApduLength);
-        }
-
-        self.payload.extend_from_slice(data);
-        if has_more {
-            return Ok(false);
-        }
-
-        self.in_progress = false;
-        Ok(true)
+        ingest_payload_chunk(
+            &mut self.payload,
+            &mut self.in_progress,
+            MAX_SIGN_PAYLOAD_LENGTH,
+            p2,
+            data,
+        )
     }
+}
+
+impl LoadIdlContext {
+    pub fn new() -> Self {
+        Self {
+            payload: Vec::new(),
+            in_progress: false,
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.payload.clear();
+        self.in_progress = false;
+    }
+
+    pub fn payload(&self) -> &[u8] {
+        &self.payload
+    }
+
+    pub fn ingest(&mut self, p2: u8, data: &[u8]) -> Result<bool, AppSW> {
+        ingest_payload_chunk(
+            &mut self.payload,
+            &mut self.in_progress,
+            MAX_LOAD_IDL_PAYLOAD_LENGTH,
+            p2,
+            data,
+        )
+    }
+}
+
+fn ingest_payload_chunk(
+    payload: &mut Vec<u8>,
+    in_progress: &mut bool,
+    max_payload_len: usize,
+    p2: u8,
+    data: &[u8],
+) -> Result<bool, AppSW> {
+    let has_extend = (p2 & P2_EXTEND) != 0;
+    let has_more = (p2 & P2_MORE) != 0;
+    if p2 & !(P2_EXTEND | P2_MORE) != 0 {
+        payload.clear();
+        *in_progress = false;
+        return Err(AppSW::WrongP1P2);
+    }
+
+    if !*in_progress {
+        if has_extend {
+            payload.clear();
+            *in_progress = false;
+            return Err(AppSW::WrongP1P2);
+        }
+        payload.clear();
+        *in_progress = true;
+    } else if !has_extend {
+        payload.clear();
+        *in_progress = false;
+        return Err(AppSW::WrongP1P2);
+    }
+
+    if payload.len() + data.len() > max_payload_len {
+        payload.clear();
+        *in_progress = false;
+        return Err(AppSW::WrongApduLength);
+    }
+
+    payload.extend_from_slice(data);
+    if has_more {
+        return Ok(false);
+    }
+
+    *in_progress = false;
+    Ok(true)
 }
 
 pub fn app_config_response() -> Result<[u8; 5], AppSW> {

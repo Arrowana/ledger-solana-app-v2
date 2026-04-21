@@ -98,6 +98,7 @@ dependencies = [
  "anyhow",
  "bs58",
  "clap",
+ "hex",
  "ledger-solana-cli",
  "reqwest",
  "serde",

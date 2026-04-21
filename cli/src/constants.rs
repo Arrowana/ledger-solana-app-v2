@@ -11,6 +11,7 @@ pub enum AppInstruction {
     GetAppConfig = 0x04,
     GetPubkey = 0x05,
     SignMessage = 0x06,
+    LoadIdl = 0x07,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -2,7 +2,7 @@ use alloc::{format, string::String, vec::Vec};
 use core::ffi::c_void;
 
 use crate::{
-    idls::{decode_instruction as decode_builtin_instruction, load_builtin_idls, LoadedBuiltinIdl},
+    idls::{decode_instruction as decode_loaded_instruction, load_idls, LoadedIdl},
     AppSW,
 };
 use codama_parser::{DecodedField, DecodedInstruction, DecodedNumber, DecodedValue};
@@ -59,7 +59,7 @@ pub fn review_message(
 
 fn build_sections(signer_pubkey: &[u8; 32], message: &[u8]) -> Result<Vec<ReviewSection>, AppSW> {
     let view = MessageView::try_new(message).map_err(|_| AppSW::InvalidData)?;
-    let builtin_idls = load_builtin_idls();
+    let loaded_idls = load_idls();
     let mut sections = Vec::new();
 
     for instruction in view.instructions() {
@@ -67,7 +67,7 @@ fn build_sections(signer_pubkey: &[u8; 32], message: &[u8]) -> Result<Vec<Review
         sections.push(build_instruction_section(
             &view,
             instruction,
-            builtin_idls.as_slice(),
+            loaded_idls.as_slice(),
             signer_pubkey,
         )?);
     }
@@ -79,7 +79,7 @@ fn build_sections(signer_pubkey: &[u8; 32], message: &[u8]) -> Result<Vec<Review
 fn build_instruction_section(
     view: &MessageView<'_>,
     instruction: CompiledInstructionView<'_>,
-    builtin_idls: &[LoadedBuiltinIdl],
+    loaded_idls: &[LoadedIdl],
     signer_pubkey: &[u8; 32],
 ) -> Result<ReviewSection, AppSW> {
     let instruction_title = format!("{}/{}", instruction.index + 1, view.instruction_count());
@@ -89,7 +89,7 @@ fn build_instruction_section(
     let (program, decoded) = match program_ref {
         AccountRefView::Static(account) => (
             format_base58(account.pubkey),
-            decode_builtin_instruction(builtin_idls, account.pubkey, instruction.data),
+            decode_loaded_instruction(loaded_idls, account.pubkey, instruction.data),
         ),
         AccountRefView::Lookup(account) => (format_lookup_account(account), None),
     };
@@ -99,7 +99,7 @@ fn build_instruction_section(
         push_instruction_header_lines(
             &mut lines,
             instruction_title.as_str(),
-            decoded.program_name,
+            decoded.program_name.as_str(),
             decoded.instruction.name.as_str(),
         );
     } else {

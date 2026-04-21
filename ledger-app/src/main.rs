@@ -22,6 +22,7 @@ extern crate alloc;
 
 mod app_ui {
     pub mod address;
+    pub mod idl_import;
     pub mod menu;
     #[cfg(any(target_os = "nanosplus", target_os = "nanox"))]
     pub mod review_scroller;
@@ -32,13 +33,15 @@ mod settings;
 mod solana;
 
 use app_ui::address::ui_display_address;
+use app_ui::idl_import::review_idl_import;
 use app_ui::menu::ui_menu_main;
 use app_ui::solana::{review_message, show_status};
-use ledger_device_sdk::io::{self, ApduHeader, Comm, Reply, StatusWords};
+use idls::{prepare_idl_import, store_prepared_idl, verify_prepared_idl_import};
+use ledger_device_sdk::io::{ApduHeader, Comm, Reply, StatusWords};
 use solana::{
     app_config_response, derive_pubkey, parse_derivation_path, parse_sign_payload, sign_message,
-    SignMessageContext, APP_CLA, INS_GET_APP_CONFIG, INS_GET_PUBKEY, INS_SIGN_MESSAGE, P1_CONFIRM,
-    P1_NON_CONFIRM, P2_EXTEND, P2_MORE,
+    LoadIdlContext, SignMessageContext, APP_CLA, INS_GET_APP_CONFIG, INS_GET_PUBKEY, INS_LOAD_IDL,
+    INS_SIGN_MESSAGE, P1_CONFIRM, P1_NON_CONFIRM, P2_EXTEND, P2_MORE,
 };
 
 ledger_device_sdk::set_panic!(ledger_device_sdk::exiting_panic);
@@ -69,6 +72,7 @@ pub enum Instruction {
     GetAppConfig,
     GetPubkey { display: bool },
     SignMessage { p2: u8 },
+    LoadIdl { p2: u8 },
 }
 
 impl TryFrom<ApduHeader> for Instruction {
@@ -82,7 +86,10 @@ impl TryFrom<ApduHeader> for Instruction {
             (INS_SIGN_MESSAGE, P1_CONFIRM, p2) if p2 & !(P2_EXTEND | P2_MORE) == 0 => {
                 Ok(Self::SignMessage { p2 })
             }
-            (INS_GET_PUBKEY | INS_SIGN_MESSAGE, _, _) => Err(AppSW::WrongP1P2),
+            (INS_LOAD_IDL, P1_NON_CONFIRM, p2) if p2 & !(P2_EXTEND | P2_MORE) == 0 => {
+                Ok(Self::LoadIdl { p2 })
+            }
+            (INS_GET_PUBKEY | INS_SIGN_MESSAGE | INS_LOAD_IDL, _, _) => Err(AppSW::WrongP1P2),
             (APP_CLA, _, _) => Err(AppSW::InsNotSupported),
             _ => Err(AppSW::InsNotSupported),
         }
@@ -159,6 +166,48 @@ fn handle_sign_message(
     Ok(())
 }
 
+fn handle_load_idl(
+    comm: &mut Comm,
+    p2: u8,
+    load_idl_context: &mut LoadIdlContext,
+) -> Result<(), AppSW> {
+    let completed =
+        load_idl_context.ingest(p2, comm.get_data().map_err(|_| AppSW::WrongApduLength)?)?;
+    if !completed {
+        return Ok(());
+    }
+
+    let prepared = match prepare_idl_import(load_idl_context.payload()) {
+        Ok(prepared) => prepared,
+        Err(error) => {
+            load_idl_context.reset();
+            return Err(error);
+        }
+    };
+
+    if let Err(error) = verify_prepared_idl_import(&prepared) {
+        load_idl_context.reset();
+        return Err(error);
+    }
+
+    if !review_idl_import(
+        comm,
+        &prepared.program_id,
+        prepared.signer_pubkeys.as_slice(),
+    )? {
+        load_idl_context.reset();
+        return Err(AppSW::Deny);
+    }
+
+    let response = store_prepared_idl(&prepared);
+
+    comm.append(&response.program_id);
+    comm.append(&[response.signer_count]);
+    comm.append(&response.idl_len.to_be_bytes());
+    load_idl_context.reset();
+    Ok(())
+}
+
 #[no_mangle]
 extern "C" fn sample_main(_arg0: u32) {
     let mut comm = Comm::new().set_expected_cla(APP_CLA);
@@ -166,6 +215,7 @@ extern "C" fn sample_main(_arg0: u32) {
     home.show_and_return();
 
     let mut sign_context = SignMessageContext::new();
+    let mut load_idl_context = LoadIdlContext::new();
 
     loop {
         let ins = comm.next_command::<Instruction>();
@@ -173,8 +223,11 @@ extern "C" fn sample_main(_arg0: u32) {
         if !matches!(ins, Instruction::SignMessage { .. }) {
             sign_context.reset();
         }
+        if !matches!(ins, Instruction::LoadIdl { .. }) {
+            load_idl_context.reset();
+        }
 
-        let status = match handle_apdu(&mut comm, ins, &mut sign_context) {
+        let status = match handle_apdu(&mut comm, ins, &mut sign_context, &mut load_idl_context) {
             Ok(()) => AppSW::Ok,
             Err(sw) => sw,
         };
@@ -190,10 +243,12 @@ fn handle_apdu(
     comm: &mut Comm,
     ins: Instruction,
     sign_context: &mut SignMessageContext,
+    load_idl_context: &mut LoadIdlContext,
 ) -> Result<(), AppSW> {
     match ins {
         Instruction::GetAppConfig => handle_get_app_config(comm),
         Instruction::GetPubkey { display } => handle_get_pubkey(comm, display),
         Instruction::SignMessage { p2 } => handle_sign_message(comm, p2, sign_context),
+        Instruction::LoadIdl { p2 } => handle_load_idl(comm, p2, load_idl_context),
     }
 }

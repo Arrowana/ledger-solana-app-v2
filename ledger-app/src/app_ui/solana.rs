@@ -2,8 +2,10 @@ use alloc::{format, string::String, vec::Vec};
 
 #[cfg(any(target_os = "nanosplus", target_os = "nanox"))]
 use crate::app_ui::review_scroller;
+#[cfg(not(any(target_os = "nanosplus", target_os = "nanox")))]
+use crate::idls::load_idls;
 use crate::{
-    idls::{decode_instruction as decode_builtin_instruction, load_builtin_idls, LoadedBuiltinIdl},
+    idls::{decode_instruction as decode_loaded_instruction, LoadedIdl},
     AppSW,
 };
 use codama_parser::{DecodedField, DecodedInstruction, DecodedNumber, DecodedValue};
@@ -48,7 +50,7 @@ pub fn review_message(
     #[cfg(not(any(target_os = "nanosplus", target_os = "nanox")))]
     {
         let view = MessageView::try_new(message).map_err(|_| AppSW::InvalidData)?;
-        let builtin_idls = load_builtin_idls();
+        let loaded_idls = load_idls();
         let mut owned_fields = Vec::new();
 
         for instruction in view.instructions() {
@@ -57,7 +59,7 @@ pub fn review_message(
                 &mut owned_fields,
                 &view,
                 instruction,
-                builtin_idls.as_slice(),
+                loaded_idls.as_slice(),
             )?;
         }
 
@@ -100,7 +102,7 @@ fn review_instruction(
     fields: &mut Vec<OwnedField>,
     view: &MessageView<'_>,
     instruction: CompiledInstructionView<'_>,
-    builtin_idls: &[LoadedBuiltinIdl],
+    loaded_idls: &[LoadedIdl],
 ) -> Result<(), AppSW> {
     let instruction_title = format!("{} / {}", instruction.index + 1, view.instruction_count());
     let program_ref = view
@@ -109,13 +111,13 @@ fn review_instruction(
     let (program, decoded) = match program_ref {
         AccountRefView::Static(account) => (
             format_base58(account.pubkey),
-            decode_builtin_instruction(builtin_idls, account.pubkey, instruction.data),
+            decode_loaded_instruction(loaded_idls, account.pubkey, instruction.data),
         ),
         AccountRefView::Lookup(account) => (format_lookup_account(account), None),
     };
     let program_label = decoded
         .as_ref()
-        .map(|decoded| decoded.program_name)
+        .map(|decoded| decoded.program_name.as_str())
         .unwrap_or(program.as_str());
     if let Some(decoded) = decoded.as_ref() {
         let instruction_summary = format!("{program_label}: {}", decoded.instruction.name);

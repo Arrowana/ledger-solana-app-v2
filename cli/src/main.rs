@@ -5,9 +5,10 @@ use codama_parser::{
     parse_program_index, DecodedField, DecodedInstruction, DecodedNumber, DecodedValue,
 };
 use ledger_solana_cli::apdu::{
-    build_get_app_config_apdu, build_get_pubkey_apdu, build_sign_message_apdus,
-    decode_apdu_response, decode_get_app_config_response, decode_get_pubkey_response,
-    decode_sign_message_response,
+    build_get_app_config_apdu, build_get_pubkey_apdu, build_load_idl_apdus,
+    build_sign_message_apdus, decode_apdu_response, decode_get_app_config_response,
+    decode_get_pubkey_response, decode_load_idl_response, decode_sign_message_response,
+    IdlAttestation,
 };
 use ledger_solana_cli::constants::{TransportKind, SW_OK, SW_USER_REFUSED};
 use ledger_solana_cli::derivation::{format_derivation_path, parse_derivation_path};
@@ -30,6 +31,7 @@ enum Commands {
     AppConfig(TransportArgs),
     GetPubkey(GetPubkeyArgs),
     SignMessage(SignMessageArgs),
+    LoadIdl(LoadIdlArgs),
     InspectMessage(InspectMessageArgs),
 }
 
@@ -66,6 +68,18 @@ struct SignMessageArgs {
 }
 
 #[derive(Args)]
+struct LoadIdlArgs {
+    #[command(flatten)]
+    transport: TransportArgs,
+    #[arg(long)]
+    idl: String,
+    #[arg(long = "signer-pubkey")]
+    signer_pubkeys: Vec<String>,
+    #[arg(long = "signature")]
+    signatures: Vec<String>,
+}
+
+#[derive(Args)]
 struct InspectMessageArgs {
     #[arg(long)]
     idl: String,
@@ -83,6 +97,7 @@ fn main() -> Result<()> {
         Commands::AppConfig(args) => handle_app_config(args),
         Commands::GetPubkey(args) => handle_get_pubkey(args),
         Commands::SignMessage(args) => handle_sign_message(args),
+        Commands::LoadIdl(args) => handle_load_idl(args),
         Commands::InspectMessage(args) => handle_inspect_message(args),
     }
 }
@@ -163,6 +178,58 @@ fn handle_sign_message(args: SignMessageArgs) -> Result<()> {
             },
             "instructionCount": message.instruction_count(),
             "addressTableLookupCount": message.address_table_lookup_count(),
+        }),
+    );
+    Ok(())
+}
+
+fn handle_load_idl(args: LoadIdlArgs) -> Result<()> {
+    if args.signer_pubkeys.len() != args.signatures.len() {
+        bail!(
+            "--signer-pubkey count ({}) must match --signature count ({})",
+            args.signer_pubkeys.len(),
+            args.signatures.len()
+        );
+    }
+    if args.signer_pubkeys.is_empty() {
+        bail!("at least one --signer-pubkey/--signature pair is required");
+    }
+
+    let idl_bytes =
+        fs::read(&args.idl).with_context(|| format!("failed to read IDL: {}", args.idl))?;
+    let attestations = args
+        .signer_pubkeys
+        .iter()
+        .zip(args.signatures.iter())
+        .map(|(signer_pubkey, signature)| {
+            Ok(IdlAttestation {
+                signer_pubkey: decode_address(signer_pubkey)?,
+                signature: decode_signature(signature)?,
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    let mut transport = open_transport_from_args(&args.transport)?;
+    let apdus = build_load_idl_apdus(&idl_bytes, &attestations)?;
+    let mut response = None;
+    for (index, apdu) in apdus.iter().enumerate() {
+        let raw = transport.exchange(apdu)?;
+        let (data, status) = decode_apdu_response(&raw)?;
+        assert_status(status, "load idl")?;
+        if index + 1 == apdus.len() {
+            response = Some(decode_load_idl_response(data)?);
+        } else if !data.is_empty() {
+            bail!("unexpected data in intermediate load-idl response");
+        }
+    }
+
+    let response = response.context("missing final load-idl response")?;
+    print_output(
+        args.transport.json,
+        json!({
+            "programId": encode_address(&response.program_id),
+            "signerCount": response.signer_count,
+            "idlLen": response.idl_len,
         }),
     );
     Ok(())
@@ -267,6 +334,20 @@ fn encode_address(value: &[u8; 32]) -> String {
     bs58::encode(value)
         .with_alphabet(Alphabet::BITCOIN)
         .into_string()
+}
+
+fn decode_signature(value: &str) -> Result<[u8; 64]> {
+    let bytes = bs58::decode(value)
+        .with_alphabet(Alphabet::BITCOIN)
+        .into_vec()
+        .with_context(|| format!("invalid base58 signature: {value}"))?;
+    if bytes.len() != 64 {
+        bail!("expected 64-byte signature: {value}");
+    }
+
+    let mut out = [0u8; 64];
+    out.copy_from_slice(&bytes);
+    Ok(out)
 }
 
 fn assert_status(status: u16, action: &str) -> Result<()> {
