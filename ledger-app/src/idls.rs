@@ -30,7 +30,14 @@ static mut IMPORTED_IDL_DATA: NVMData<AtomicStorage<[u8; IMPORTED_IDL_STORAGE_SI
 pub struct LoadedIdl {
     pub name: String,
     pub program_id: [u8; 32],
+    pub source: LoadedIdlSource,
     program: ProgramIndex<'static>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum LoadedIdlSource {
+    Builtin,
+    Imported,
 }
 
 pub struct ResolvedDecodedInstruction {
@@ -166,6 +173,7 @@ fn load_builtin_idl(builtin: &'static BuiltinIdlSource) -> Option<LoadedIdl> {
     Some(LoadedIdl {
         name: String::from(builtin.name),
         program_id,
+        source: LoadedIdlSource::Builtin,
         program,
     })
 }
@@ -190,6 +198,7 @@ fn load_imported_idl() -> Option<LoadedIdl> {
     Some(LoadedIdl {
         name: program.name.clone(),
         program_id,
+        source: LoadedIdlSource::Imported,
         program,
     })
 }
@@ -295,4 +304,11 @@ fn store_imported_idl(idl_bytes: &[u8], program_id: &[u8; 32]) {
     let data = &raw mut IMPORTED_IDL_DATA;
     let storage = unsafe { (*data).get_mut() };
     storage.update(&updated);
+}
+
+pub fn clear_imported_idl() {
+    let cleared = [0u8; IMPORTED_IDL_STORAGE_SIZE];
+    let data = &raw mut IMPORTED_IDL_DATA;
+    let storage = unsafe { (*data).get_mut() };
+    storage.update(&cleared);
 }

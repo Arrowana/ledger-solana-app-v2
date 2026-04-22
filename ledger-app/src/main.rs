@@ -23,6 +23,8 @@ extern crate alloc;
 mod app_ui {
     pub mod address;
     pub mod idl_import;
+    #[cfg(any(target_os = "nanosplus", target_os = "nanox"))]
+    pub mod idl_settings;
     pub mod menu;
     #[cfg(any(target_os = "nanosplus", target_os = "nanox"))]
     pub mod review_scroller;
@@ -35,8 +37,12 @@ mod solana;
 use app_ui::address::ui_display_address;
 use app_ui::idl_import::review_idl_import;
 use app_ui::menu::ui_menu_main;
+#[cfg(any(target_os = "nanosplus", target_os = "nanox"))]
+use app_ui::menu::HomeAction;
 use app_ui::solana::{review_message, show_status};
 use idls::{prepare_idl_import, store_prepared_idl, verify_prepared_idl_import};
+#[cfg(any(target_os = "nanosplus", target_os = "nanox"))]
+use ledger_device_sdk::exit_app;
 use ledger_device_sdk::io::{ApduHeader, Comm, Reply, StatusWords};
 use solana::{
     app_config_response, derive_pubkey, parse_derivation_path, parse_sign_payload, sign_message,
@@ -211,14 +217,16 @@ fn handle_load_idl(
 #[no_mangle]
 extern "C" fn sample_main(_arg0: u32) {
     let mut comm = Comm::new().set_expected_cla(APP_CLA);
-    let mut home = ui_menu_main(&mut comm);
-    home.show_and_return();
 
     let mut sign_context = SignMessageContext::new();
     let mut load_idl_context = LoadIdlContext::new();
 
+    #[cfg(any(target_os = "nanosplus", target_os = "nanox"))]
     loop {
-        let ins = comm.next_command::<Instruction>();
+        let ins = match ui_menu_main(&mut comm).show_and_wait() {
+            HomeAction::Command(instruction) => instruction,
+            HomeAction::Quit => exit_app(0),
+        };
 
         if !matches!(ins, Instruction::SignMessage { .. }) {
             sign_context.reset();
@@ -232,9 +240,33 @@ extern "C" fn sample_main(_arg0: u32) {
             Err(sw) => sw,
         };
         comm.reply(status);
+    }
 
-        if matches!(status, AppSW::Ok | AppSW::Deny) {
-            home.show_and_return();
+    #[cfg(not(any(target_os = "nanosplus", target_os = "nanox")))]
+    {
+        let mut home = ui_menu_main(&mut comm);
+        home.show_and_return();
+
+        loop {
+            let ins = comm.next_command::<Instruction>();
+
+            if !matches!(ins, Instruction::SignMessage { .. }) {
+                sign_context.reset();
+            }
+            if !matches!(ins, Instruction::LoadIdl { .. }) {
+                load_idl_context.reset();
+            }
+
+            let status = match handle_apdu(&mut comm, ins, &mut sign_context, &mut load_idl_context)
+            {
+                Ok(()) => AppSW::Ok,
+                Err(sw) => sw,
+            };
+            comm.reply(status);
+
+            if matches!(status, AppSW::Ok | AppSW::Deny) {
+                home.show_and_return();
+            }
         }
     }
 }

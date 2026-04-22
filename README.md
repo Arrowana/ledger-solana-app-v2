@@ -29,6 +29,7 @@ Dynamic on-device instruction decoding:
 - one imported Codama IDL slot
 - imported IDLs are accepted only when every attached attestation signature verifies on-device
 - `load-idl` now requires on-device confirmation and reviews the target `programId` plus every attached signer before import
+- on Nano-class devices, `Settings` can browse loaded IDLs, marks builtin IDLs as non-removable, and can remove the imported slot
 
 Current host-side tools:
 
@@ -48,14 +49,15 @@ cargo check -p ledger-solana-cli
 cargo test -p ledger-solana-cli
 ./scripts/build-ledger.sh
 cargo run -p app-integration-tests -- speculos-smoke
-SPECULOS_API_PORT=5001 bash ./scripts/run-speculos.sh
+cargo run -p app-integration-tests -- review-load-idl
+bash ./scripts/run-speculos.sh
 cargo run -p ledger-solana-cli --bin speculos-ui -- screen
 ```
 
 Speculos web UI:
 
 ```text
-http://127.0.0.1:5001
+http://127.0.0.1:5000
 ```
 
 ## CLI
@@ -111,7 +113,7 @@ cargo run -p app-integration-tests -- speculos-smoke
 That command performs the steps in order:
 
 - builds the Ledger app with `scripts/build-ledger.sh`
-- launches Speculos on free local ports
+- removes the previous repo-owned Speculos container, then launches Speculos on fixed local ports `5000` / `9999` / `5900`
 - checks `app-config`
 - checks `get-pubkey`
 - submits built-in decode smoke cases for `system`, `compute-budget`, `associated-token-account`, and `token`
@@ -124,13 +126,21 @@ Useful variants:
 cargo run -p app-integration-tests -- speculos-smoke --skip-build
 cargo run -p app-integration-tests -- speculos-smoke --cases system-transfer
 cargo run -p app-integration-tests -- speculos-smoke --cases compute-budget-limit --cases token-transfer
-cargo run -p app-integration-tests -- speculos-smoke --skip-build --api-port 5001 --manual-review
-cargo run -p app-integration-tests -- speculos-smoke --skip-build --api-port 5001 --manual-load-idl-review
+cargo run -p app-integration-tests -- speculos-smoke --skip-build --manual-review
+cargo run -p app-integration-tests -- speculos-smoke --skip-build --manual-load-idl-review
 ```
 
 `--manual-review` still sends the sign payload and waits for the review flow to start, but it stops driving the buttons. The runner prints the Speculos web UI URL and waits for you to finish the review manually in the browser.
 
-`--manual-load-idl-review` does the same for the `load-idl` confirmation flow only, so you can review the imported `programId` and signer list yourself without pausing every signing case.
+`--manual-load-idl-review` does the same for the `load-idl` confirmation flow only, but still as part of the full smoke run.
+
+If you want to review only the IDL import and skip `app-config`, `get-pubkey`, and all signing cases, use:
+
+```sh
+cargo run -p app-integration-tests -- review-load-idl --skip-build
+```
+
+That command launches Speculos, submits the signed sample IDL import, stops at the on-device confirmation, waits for you to approve or reject it in the Speculos web UI, and then runs one imported-program signing case to prove the newly loaded IDL is actually used for decoded review.
 
 ## Security Model
 

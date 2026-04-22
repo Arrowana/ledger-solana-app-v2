@@ -1,4 +1,3 @@
-use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc;
@@ -21,26 +20,26 @@ use reqwest::blocking::Client;
 use serde::Deserialize;
 use serde_json::json;
 use sha2::{Digest, Sha256};
-use solana_instruction::{AccountMeta, Instruction};
+use solana_address::Address;
+use solana_compute_budget_interface::ComputeBudgetInstruction;
+use solana_instruction::Instruction;
 use solana_message::Message;
-use solana_pubkey::Pubkey;
+use solana_system_interface::instruction as system_instruction;
+use spl_associated_token_account_interface::instruction as associated_token_instruction;
+use spl_token_interface::instruction as token_instruction;
 
 const DEFAULT_DERIVATION_PATH: &str = "m/44'/501'/0'/0'";
+const DEFAULT_SPECULOS_API_PORT: u16 = 5001;
+const DEFAULT_SPECULOS_APDU_PORT: u16 = 9999;
+const DEFAULT_SPECULOS_VNC_PORT: u16 = 5900;
 const SCREEN_TIMEOUT: Duration = Duration::from_secs(20);
 const SCREEN_CHANGE_TIMEOUT: Duration = Duration::from_secs(5);
 const SCROLLER_SCROLL_TIMEOUT: Duration = Duration::from_millis(900);
 const SIGN_RESULT_TIMEOUT: Duration = Duration::from_secs(30);
 const HOME_SCREEN_TITLE: &str = "Solana v2";
 const HOME_SCREEN_READY: &str = "app is ready";
-const SYSTEM_PROGRAM_ID: Pubkey = Pubkey::from_str_const("11111111111111111111111111111111");
-const COMPUTE_BUDGET_PROGRAM_ID: Pubkey =
-    Pubkey::from_str_const("ComputeBudget111111111111111111111111111111");
-const ASSOCIATED_TOKEN_ACCOUNT_PROGRAM_ID: Pubkey =
-    Pubkey::from_str_const("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
-const TOKEN_PROGRAM_ID: Pubkey =
-    Pubkey::from_str_const("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
-const IMPORTED_SAMPLE_PROGRAM_ID: Pubkey =
-    Pubkey::from_str_const("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
+const IMPORTED_SAMPLE_PROGRAM_ID: Address =
+    Address::from_str_const("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
 const IMPORTED_SAMPLE_IDL: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../testdata/sample-program.pruned.codama.json"
@@ -61,6 +60,7 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     SpeculosSmoke(SpeculosSmokeArgs),
+    ReviewLoadIdl(ReviewLoadIdlArgs),
 }
 
 #[derive(Args, Clone)]
@@ -81,6 +81,20 @@ struct SpeculosSmokeArgs {
     vnc_port: Option<u16>,
     #[arg(long, value_enum)]
     cases: Vec<SmokeCaseName>,
+}
+
+#[derive(Args, Clone)]
+struct ReviewLoadIdlArgs {
+    #[arg(long, default_value_t = false)]
+    skip_build: bool,
+    #[arg(long, default_value = DEFAULT_DERIVATION_PATH)]
+    derivation_path: String,
+    #[arg(long)]
+    api_port: Option<u16>,
+    #[arg(long)]
+    apdu_port: Option<u16>,
+    #[arg(long)]
+    vnc_port: Option<u16>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
@@ -360,34 +374,17 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Commands::SpeculosSmoke(args) => run_speculos_smoke(args),
+        Commands::ReviewLoadIdl(args) => run_review_load_idl(args),
     }
 }
 
 fn run_speculos_smoke(args: SpeculosSmokeArgs) -> Result<()> {
     let root = repo_root()?;
-    let ports = resolve_ports(&args);
+    let ports = resolve_ports(args.api_port, args.apdu_port, args.vnc_port);
     let derivation_path = parse_derivation_path(&args.derivation_path)?;
     let cases = selected_cases(&args);
 
-    if !args.skip_build {
-        println!("==> Building Ledger app with scripts/build-ledger.sh");
-        run_checked(
-            Command::new("bash")
-                .arg("./scripts/build-ledger.sh")
-                .current_dir(&root),
-            "scripts/build-ledger.sh",
-        )?;
-    }
-
-    println!(
-        "==> Launching Speculos on api={}, apdu={}, vnc={}",
-        ports.api, ports.apdu, ports.vnc
-    );
-    let _speculos = SpeculosProcess::spawn(&root, &ports)?;
-    let api = SpeculosApi::new(ports.api)?;
-    api.wait_for_screen_contains(HOME_SCREEN_TITLE, SCREEN_TIMEOUT)?;
-    api.wait_for_screen_contains(HOME_SCREEN_READY, SCREEN_TIMEOUT)?;
-    println!("==> Speculos is ready");
+    let (_speculos, api) = launch_speculos(&root, &ports, args.skip_build)?;
 
     let app_config = read_app_config(ports.apdu)?;
     println!(
@@ -431,11 +428,85 @@ fn run_speculos_smoke(args: SpeculosSmokeArgs) -> Result<()> {
     Ok(())
 }
 
+fn run_review_load_idl(args: ReviewLoadIdlArgs) -> Result<()> {
+    let root = repo_root()?;
+    let ports = resolve_ports(args.api_port, args.apdu_port, args.vnc_port);
+    let derivation_path = parse_derivation_path(&args.derivation_path)?;
+    let (_speculos, api) = launch_speculos(&root, &ports, args.skip_build)?;
+    let attestation = imported_sample_attestation()?;
+
+    println!("==> Running standalone load-idl review");
+    let response = run_load_idl_case(&api, ports.apdu, IMPORTED_SAMPLE_IDL, &[attestation], true)?;
+
+    ensure!(
+        response.program_id == IMPORTED_SAMPLE_PROGRAM_ID.to_bytes(),
+        "load-idl returned wrong program id: {}",
+        bs58::encode(response.program_id)
+            .with_alphabet(Alphabet::BITCOIN)
+            .into_string()
+    );
+    ensure!(
+        response.signer_count == 1,
+        "load-idl returned wrong signer count: {}",
+        response.signer_count
+    );
+    ensure!(
+        response.idl_len as usize == IMPORTED_SAMPLE_IDL.len(),
+        "load-idl returned wrong idl length: {}",
+        response.idl_len
+    );
+    println!(
+        "==> load-idl imported {} with {} signer",
+        bs58::encode(response.program_id)
+            .with_alphabet(Alphabet::BITCOIN)
+            .into_string(),
+        response.signer_count
+    );
+    let signer_pubkey = read_pubkey(ports.apdu, derivation_path.as_slice())?;
+    let decoded_case = build_imported_sample_case(signer_pubkey, true)?;
+    run_sign_case(
+        &api,
+        ports.apdu,
+        derivation_path.as_slice(),
+        &decoded_case,
+        false,
+    )?;
+    println!("==> Standalone load-idl review completed successfully");
+    Ok(())
+}
+
 fn read_app_config(apdu_port: u16) -> Result<ledger_solana_cli::apdu::AppConfigResponse> {
     let response = exchange_apdu(apdu_port, &build_get_app_config_apdu()?)?;
     let (data, status) = decode_apdu_response(&response)?;
     assert_status(status, "app-config")?;
     decode_get_app_config_response(data).context("failed to decode app-config response")
+}
+
+fn launch_speculos(
+    root: &Path,
+    ports: &Ports,
+    skip_build: bool,
+) -> Result<(SpeculosProcess, SpeculosApi)> {
+    if !skip_build {
+        println!("==> Building Ledger app with scripts/build-ledger.sh");
+        run_checked(
+            Command::new("bash")
+                .arg("./scripts/build-ledger.sh")
+                .current_dir(root),
+            "scripts/build-ledger.sh",
+        )?;
+    }
+
+    println!(
+        "==> Launching Speculos on api={}, apdu={}, vnc={}",
+        ports.api, ports.apdu, ports.vnc
+    );
+    let speculos = SpeculosProcess::spawn(root, ports)?;
+    let api = SpeculosApi::new(ports.api)?;
+    api.wait_for_screen_contains(HOME_SCREEN_TITLE, SCREEN_TIMEOUT)?;
+    api.wait_for_screen_contains(HOME_SCREEN_READY, SCREEN_TIMEOUT)?;
+    println!("==> Speculos is ready");
+    Ok((speculos, api))
 }
 
 fn read_pubkey(apdu_port: u16, derivation_path: &[u32]) -> Result<[u8; 32]> {
@@ -985,67 +1056,49 @@ fn build_imported_sample_case(signer_pubkey: [u8; 32], decoded: bool) -> Result<
 }
 
 fn build_system_transfer_message(signer_pubkey: [u8; 32]) -> Result<Vec<u8>> {
-    let payer = Pubkey::new_from_array(signer_pubkey);
-    let destination = repeated_pubkey(0x22);
-    let instruction = Instruction {
-        program_id: SYSTEM_PROGRAM_ID,
-        accounts: vec![
-            AccountMeta::new(payer, true),
-            AccountMeta::new(destination, false),
-        ],
-        data: system_transfer_data(42_000_000_000),
-    };
+    let payer = Address::from(signer_pubkey);
+    let destination = repeated_address(0x22);
+    let instruction = system_instruction::transfer(&payer, &destination, 42_000_000_000);
     Ok(build_legacy_message(&payer, &[instruction]))
 }
 
 fn build_compute_budget_limit_message(signer_pubkey: [u8; 32]) -> Result<Vec<u8>> {
-    let payer = Pubkey::new_from_array(signer_pubkey);
-    let instruction = Instruction {
-        program_id: COMPUTE_BUDGET_PROGRAM_ID,
-        accounts: vec![],
-        data: compute_budget_limit_data(1_400_000),
-    };
+    let payer = Address::from(signer_pubkey);
+    let instruction = ComputeBudgetInstruction::set_compute_unit_limit(1_400_000);
     Ok(build_legacy_message(&payer, &[instruction]))
 }
 
 fn build_ata_create_message(signer_pubkey: [u8; 32]) -> Result<Vec<u8>> {
-    let payer = Pubkey::new_from_array(signer_pubkey);
-    let associated_account = repeated_pubkey(0x67);
-    let wallet = repeated_pubkey(0x68);
-    let mint = repeated_pubkey(0x69);
-    let instruction = Instruction {
-        program_id: ASSOCIATED_TOKEN_ACCOUNT_PROGRAM_ID,
-        accounts: vec![
-            AccountMeta::new(payer, true),
-            AccountMeta::new(associated_account, false),
-            AccountMeta::new_readonly(wallet, false),
-            AccountMeta::new_readonly(mint, false),
-            AccountMeta::new_readonly(SYSTEM_PROGRAM_ID, false),
-            AccountMeta::new_readonly(TOKEN_PROGRAM_ID, false),
-        ],
-        data: vec![0],
-    };
+    let payer = Address::from(signer_pubkey);
+    let wallet = repeated_address(0x68);
+    let mint = repeated_address(0x69);
+    let instruction = associated_token_instruction::create_associated_token_account(
+        &payer,
+        &wallet,
+        &mint,
+        &spl_token_interface::id(),
+    );
     Ok(build_legacy_message(&payer, &[instruction]))
 }
 
 fn build_token_transfer_message(signer_pubkey: [u8; 32]) -> Result<Vec<u8>> {
-    let authority = Pubkey::new_from_array(signer_pubkey);
-    let source = repeated_pubkey(0x89);
-    let destination = repeated_pubkey(0x8a);
-    let instruction = Instruction {
-        program_id: TOKEN_PROGRAM_ID,
-        accounts: vec![
-            AccountMeta::new(source, false),
-            AccountMeta::new(destination, false),
-            AccountMeta::new_readonly(authority, true),
-        ],
-        data: token_transfer_data(42_000_000),
-    };
+    let authority = Address::from(signer_pubkey);
+    let source = repeated_address(0x89);
+    let destination = repeated_address(0x8a);
+    let instruction = token_instruction::transfer(
+        &spl_token_interface::id(),
+        &source,
+        &destination,
+        &authority,
+        &[],
+        42_000_000,
+    )
+    .context("failed to build token transfer test instruction")?;
     Ok(build_legacy_message(&authority, &[instruction]))
 }
 
 fn build_imported_sample_message(signer_pubkey: [u8; 32]) -> Result<Vec<u8>> {
-    let payer = Pubkey::new_from_array(signer_pubkey);
+    let payer = Address::from(signer_pubkey);
     let instruction = Instruction {
         program_id: IMPORTED_SAMPLE_PROGRAM_ID,
         accounts: vec![],
@@ -1054,7 +1107,7 @@ fn build_imported_sample_message(signer_pubkey: [u8; 32]) -> Result<Vec<u8>> {
     Ok(build_legacy_message(&payer, &[instruction]))
 }
 
-fn build_legacy_message(payer: &Pubkey, instructions: &[Instruction]) -> Vec<u8> {
+fn build_legacy_message(payer: &Address, instructions: &[Instruction]) -> Vec<u8> {
     Message::new(instructions, Some(payer)).serialize()
 }
 
@@ -1063,27 +1116,6 @@ fn message_sha256(message: &[u8]) -> String {
     bs58::encode(digest)
         .with_alphabet(Alphabet::BITCOIN)
         .into_string()
-}
-
-fn system_transfer_data(amount: u64) -> Vec<u8> {
-    let mut out = Vec::with_capacity(12);
-    out.extend_from_slice(&2u32.to_le_bytes());
-    out.extend_from_slice(&amount.to_le_bytes());
-    out
-}
-
-fn compute_budget_limit_data(units: u32) -> Vec<u8> {
-    let mut out = Vec::with_capacity(5);
-    out.push(2);
-    out.extend_from_slice(&units.to_le_bytes());
-    out
-}
-
-fn token_transfer_data(amount: u64) -> Vec<u8> {
-    let mut out = Vec::with_capacity(9);
-    out.push(3);
-    out.extend_from_slice(&amount.to_le_bytes());
-    out
 }
 
 fn imported_sample_instruction_data() -> Vec<u8> {
@@ -1101,8 +1133,8 @@ fn imported_sample_attestation() -> Result<IdlAttestation> {
     })
 }
 
-fn repeated_pubkey(byte: u8) -> Pubkey {
-    Pubkey::new_from_array([byte; 32])
+fn repeated_address(byte: u8) -> Address {
+    Address::from([byte; 32])
 }
 
 fn decode_hex_array<const N: usize>(value: &str) -> Result<[u8; N]> {
@@ -1124,32 +1156,11 @@ fn selected_cases(args: &SpeculosSmokeArgs) -> Vec<SmokeCaseName> {
     }
 }
 
-fn resolve_ports(args: &SpeculosSmokeArgs) -> Ports {
-    let api = args.api_port.unwrap_or_else(find_free_port);
-    let apdu = args
-        .apdu_port
-        .unwrap_or_else(|| find_free_port_excluding(&[api]));
-    let vnc = args
-        .vnc_port
-        .unwrap_or_else(|| find_free_port_excluding(&[api, apdu]));
+fn resolve_ports(api_port: Option<u16>, apdu_port: Option<u16>, vnc_port: Option<u16>) -> Ports {
+    let api = api_port.unwrap_or(DEFAULT_SPECULOS_API_PORT);
+    let apdu = apdu_port.unwrap_or(DEFAULT_SPECULOS_APDU_PORT);
+    let vnc = vnc_port.unwrap_or(DEFAULT_SPECULOS_VNC_PORT);
     Ports { api, apdu, vnc }
-}
-
-fn find_free_port() -> u16 {
-    find_free_port_excluding(&[])
-}
-
-fn find_free_port_excluding(excluded: &[u16]) -> u16 {
-    loop {
-        let port = TcpListener::bind(("127.0.0.1", 0))
-            .expect("failed to allocate free port")
-            .local_addr()
-            .expect("failed to read free port")
-            .port();
-        if !excluded.contains(&port) {
-            return port;
-        }
-    }
 }
 
 fn repo_root() -> Result<PathBuf> {

@@ -16,6 +16,7 @@ BUTTON_PORT="${SPECULOS_BUTTON_PORT:-0}"
 VNC_PORT="${SPECULOS_VNC_PORT:-5900}"
 IMAGE="${LEDGER_APP_BUILDER_IMAGE:-ghcr.io/ledgerhq/ledger-app-builder/ledger-app-dev-tools:latest}"
 DOCKER_BIN="${DOCKER_BIN:-docker}"
+CONTAINER_NAME="${SPECULOS_CONTAINER_NAME:-ledger-solana-app-v2-speculos}"
 
 if [ ! -f "$APP_ELF_HOST" ]; then
   echo >&2 "missing app ELF: $APP_ELF_HOST"
@@ -33,7 +34,10 @@ if [ -t 0 ] && [ -t 1 ]; then
   DOCKER_TTY_ARGS=(-it)
 fi
 
+"$DOCKER_BIN" rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
+
 DOCKER_ARGS=(run --rm "${DOCKER_TTY_ARGS[@]}"
+  --name "$CONTAINER_NAME"
   -p "$APDU_PORT:$APDU_PORT"
   -p "$VNC_PORT:$VNC_PORT"
   -v "$ROOT_DIR:/app"
